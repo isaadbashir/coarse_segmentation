@@ -6,7 +6,7 @@ PATCHES_MAGNIFICATION_LEVEL = '20x' # must of be string as 10x, 20x, 40x
 ## pre-processing
 # coarse masks
 # filter size i.e., the window max will be taken and assigned
-COARSE_FILTER_SIZE = 32
+COARSE_FILTER_SIZE = 16
 
 
 # common functions used in the project
