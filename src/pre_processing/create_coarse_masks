@@ -5,6 +5,7 @@ from multiprocessing import Pool
 import matplotlib.pyplot as plt
 import pickle
 import config
+import utils
 
 def create_coarse_patches(path, pre_processing_fun = None):
 
@@ -21,7 +22,7 @@ def create_coarse_patches(path, pre_processing_fun = None):
     # ori_mask = np.copy(mask)
     output_size = mask.shape[0]//config.COARSE_FILTER_SIZE
 
-    coarse_mask = np.zeros((output_size,output_size))
+    coarse_mask = np.zeros((output_size,output_size), dtype=np.uint8)
 
     for i in range(0, mask.shape[0], config.COARSE_FILTER_SIZE):
 
@@ -51,7 +52,10 @@ def create_coarse_patches(path, pre_processing_fun = None):
                 print(f'{ex}\n Name: {path}\n I:J {i}{j}')
 
     # due to the variable shape of the coarse mask w need to store it as dict
-    small_combo = {'img': image, 'mask': mask, 'cmask': coarse_mask}
+    small_combo = {config.KEY_IMAGE: image,
+                    config.KEY_COARSE_MASK_RESIZE: mask,
+                    config.KEY_COARSE_MASK: coarse_mask,
+                    config.KEY_MASK: patch[:, :, 3] if pre_processing_fun is None else pre_processing_fun(patch[:, :, 3])}
 
     # exrtact the meta data for saving files
     patch_name = path.split('/')[-1]
@@ -94,7 +98,7 @@ def main():
         list_of_patches = os.listdir(INPUT_PATH)
 
         mp = Pool(20)
-        mp.map(partial(create_coarse_patches, pre_processing_fun = config.group_mask_tnbc_classes),
+        mp.map(partial(create_coarse_patches, pre_processing_fun = utils.group_mask_tnbc_classes),
                         [os.path.join(INPUT_PATH,i) for i in list_of_patches])
 
 
