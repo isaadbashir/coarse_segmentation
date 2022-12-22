@@ -1,5 +1,30 @@
 import numpy as np
 import matplotlib.pyplot as plt
+import logging
+import sys
+import config
+
+def get_console_handler():
+    console_handler = logging.StreamHandler(sys.stdout)
+    console_handler.setFormatter(config.LOG_FORMATTER)
+    return console_handler
+
+
+def get_file_handler(file_path):
+    file_handler = logging.FileHandler(file_path)
+    file_handler.setFormatter(config.LOG_FORMATTER)
+    return file_handler
+
+
+def get_logger(logger_name, file_path):
+    logger = logging.getLogger(logger_name)
+    logger.setLevel(logging.DEBUG)  # better to have too much log than not enough
+    logger.addHandler(get_console_handler())
+    logger.addHandler(get_file_handler(file_path))
+    # with this pattern, it's rarely necessary to propagate the error up to parent
+    logger.propagate = False
+    return logger
+
 
 # common functions used in the project
 def group_mask_tnbc_classes(mask):

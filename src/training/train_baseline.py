@@ -15,7 +15,8 @@ from data.data_reader import DataReader
 import config
 from utils.losses import *
 from utils.metrics import *
-
+from models.model_builder import ModelBuilder
+from utils import *
 
 class TrainBaseline:
     """
@@ -23,11 +24,11 @@ class TrainBaseline:
 
     """
 
-    def __init__(self, model_name, data_path, semi_split_divisor, patch_size, patch_magnification, output_path, num_classes, num_epochs, batch_size, gpu_id, experiment_no):
+    def __init__(self, model_name, data_path, mini_patch_size, patch_size, patch_magnification, output_path, num_classes, num_epochs, batch_size, gpu_id, experiment_no):
         self.model_name = model_name
         self.data_path = data_path
-        self.semi_split_divisor = semi_split_divisor
         self.patch_size = patch_size
+        self.mini_patch_size = mini_patch_size
         self.patch_magnification = patch_magnification
         self.output_path = output_path
         self.num_classes = num_classes
@@ -35,7 +36,6 @@ class TrainBaseline:
         self.batch_size = batch_size
         self.gpu_id = gpu_id
         self.experiment_no = experiment_no
-        self.patch_folder = 'norm_patch' if 'norm' in self.experiment_no else 'patch'
         self.config_no = self.experiment_no.split('_')[-1]
 
         # create directories path
@@ -67,65 +67,18 @@ class TrainBaseline:
         # set the gpu for usage
         torch.cuda.set_device(self.gpu_id)
 
-    def load_model(self, model_name):
+        # setup the loss and metrics 
+        self.initialize()
+
+    def load_model(self):
         '''
-        load the semantic semgentation models for training the baseline
+        load the coarse semgentation models for training the baseline
         :return: model
         '''
 
-        encoder = 'efficientnet-b0'
-        encoder_weights = 'imagenet'
-        activation = 'softmax2d'  # could be None for logits or 'softmax2d' for multiclass segmentation
-        model = None
-
-        # create segmentation model with pretrained encoder
-        if model_name == 'unet':
-            """
-            Unet
-            """
-            model = smp.Unet(
-                    encoder_name=encoder,
-                    encoder_weights=encoder_weights,
-                    classes=self.num_classes,
-                    activation=activation)
-
-        elif model_name == 'deeplab':
-            """
-            DeepLabV3+
-            """
-            model = smp.DeepLabV3Plus(
-                    encoder_name=encoder,
-                    encoder_weights=encoder_weights,
-                    classes=self.num_classes,
-                    activation=activation)
-
-        elif model_name == 'fpn':
-            """
-            FPN
-            """
-            model = smp.FPN(
-                    encoder_name=encoder,
-                    encoder_weights=encoder_weights,
-                    classes=self.num_classes,
-                    activation=activation)
-
-        elif model_name == 'psp':
-            """
-            PSP Net
-            """
-            model = smp.PSPNet(
-                    encoder_name=encoder,
-                    encoder_weights=encoder_weights,
-                    classes=self.num_classes,
-                    activation=activation)
-
-        else:
-
-            model = smp.Unet(
-                    encoder_name=encoder,
-                    encoder_weights=encoder_weights,
-                    classes=self.num_classes,
-                    activation=activation)
+        model_builder = ModelBuilder(self.model_name, self.mini_patch_size)
+        
+        model = model_builder.get_model()
 
         # put model to the GPU
         model.cuda()
@@ -142,8 +95,8 @@ class TrainBaseline:
         :return: train and test generators
         """
 
-        self.logger.info(f'STEP:2 - Creating augmentation for train and test')
         # create the train augmentation
+        self.logger.info(f'STEP:2 - Creating augmentation for train and test')
         train_transform = album.Compose([
             album.Resize(height=self.patch_size, width=self.patch_size),
             album.VerticalFlip(p=0.5),
@@ -169,31 +122,30 @@ class TrainBaseline:
         ])
 
         # create the data loader params
+        self.logger.info(f'STEP:2 - Creating params for data loaders {params}')
         params = {'batch_size': self.batch_size,
                   'shuffle': False,
                   'num_workers': 4,
                   'pin_memory': False}
-        self.logger.info(f'STEP:2 - Creating params for data loaders {params}')
 
+        
         # create the paths for the train and test
-        train_patch_path = os.path.join(self.data_path, self.patch_folder, f'{self.patch_magnification}x', f'{self.patch_size}', 'train')
-        test_patch_path = os.path.join(self.data_path, self.patch_folder, f'{self.patch_magnification}x', f'{self.patch_size}', 'test')
-
-        # get the config files for filtering the images
-        train_config_file_path = os.path.join(self.data_path, f'config_{self.config_no}', f'supervised_1by{self.semi_split_divisor}_list.npy')
-        test_config_file_path = os.path.join(self.data_path, f'config_{self.config_no}', f'test_1by{self.semi_split_divisor}_list.npy')
-
-        # load the config files
-        config_file = np.load(train_config_file_path)
-        config_test_file = np.load(test_config_file_path)
-        self.logger.info(f'STEP:2 - Loading the configuration files from \ntrain: {train_config_file_path} \ntest: {test_config_file_path}')
+        train_patch_path = os.path.join(self.data_path, f'{self.patch_magnification}x', f'{self.mini_patch_size}x{self.mini_patch_size}', 'train')
+        test_patch_path = os.path.join(self.data_path, f'{self.patch_magnification}x', f'{self.mini_patch_size}x{self.mini_patch_size}', 'test')
 
         # create dataset reader
-        data_reader = TNBCDataset(data_dir=train_patch_path, num_classes=self.num_classes, target_size=self.patch_size, config_file=config_file, transformation=train_transform)
-        data_test_reader = TNBCDataset(data_dir=test_patch_path, num_classes=self.num_classes, target_size=self.patch_size, config_file=config_test_file, transformation=test_transform)
-        self.logger.info(f'STEP:2 - Loading the data files from \ntrain:{train_patch_path} \ntest: {test_patch_path}')
+        data_reader = DataReader(data_dir=train_patch_path,
+                                    target_size=self.patch_size,
+                                    num_classes=self.num_classes,
+                                    transformation=train_transform)
+
+        data_test_reader = DataReader(data_dir=test_patch_path,
+                                        target_size=self.patch_size,
+                                        num_classes=self.num_classes,
+                                        transformation=test_transform)
 
         # create the data generator for pytorch
+        self.logger.info(f'STEP:2 - Loading the data files from \ntrain:{train_patch_path} \ntest: {test_patch_path}')
         train_generator = torch.utils.data.DataLoader(data_reader, **params)
         test_generator = torch.utils.data.DataLoader(data_test_reader, **params)
 
@@ -223,36 +175,76 @@ class TrainBaseline:
 
         return optimizer
 
+    def initialize(self):
+
+        self.loss = AverageMeter()
+        self.total_inter = 0 
+        self.total_union = 0
+        self.total_correct = 0
+        self.total_label = 0
+        self.mIoU = 0
+        self.mDice =0
+        self.pixel_acc = 0
+        self.class_iou = {}
+        self.class_dice = {}
+
+    def update_loss(self, loss):
+        n = loss.numel()
+        count = torch.tensor([n]).long().cuda()
+        n = count.item()
+        mean = loss.sum() / n
+        self.loss.update(mean.item())
+
+    def update_metrics(self, correct, labeled, inter, union):
+        self.total_correct += correct
+        self.total_label += labeled
+        self.total_inter += inter
+        self.total_union += union
+
+    def get_metrics(self):
+     
+        pixAcc = 1.0 * self.total_correct / (np.spacing(1) + self.total_label)
+        IoU = 1.0 * self.total_inter / (np.spacing(1) + self.total_union)
+        dice = (2 * IoU) / (IoU + 1)
+        
+        mIoU = IoU.mean()
+        mDice = dice.mean()
+        return {
+            "Pixel_Accuracy": np.round(pixAcc, 3),
+            "Mean_IoU": np.round(mIoU, 3),
+            "Mean_Dice": np.round(mDice, 3),
+            "Class_IoU": dict(zip(range(self.num_classes), np.round(IoU, 3))),
+            "Class_Dice": dict(zip(range(self.num_classes), np.round(dice, 3)))
+        }
+
     def train_model(self):
         """
         train loop for training the model which includes creating the model,
         reading data and training the model using the data
 
         """
-        self.logger.info(f'STEP:1 - Loading model {self.model_name}')
-        # load the model
-        model = self.load_model(self.model_name)
-        self.logger.info(f'STEP:1 - Model {self.model_name} loaded')
 
-        self.logger.info(f'STEP:2 - Loading data generators ')
+        # load the model
+        self.logger.info(f'STEP:1 - Loading model {self.model_name}')
+        model = self.load_model()
+        self.logger.info(f'STEP:1 - Model {self.model_name} loaded successfully')
+
         # load the data generators
+        self.logger.info(f'STEP:2 - Loading data generators ')
         train_generator, test_generator = self.load_data()
-        self.logger.info(f'STEP:2 - Data generators loaded')
+        self.logger.info(f'STEP:2 - Data generators loaded successfully')
 
         self.logger.info(f'STEP:3 - Loading optimizers')
         optim = self.get_optim(model, 'adam', 0.0001)
         scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optim, T_max=10, eta_min=0.00001)
-        self.logger.info(f'STEP:3 - Loaded \n{optim}')
+        self.logger.info(f'STEP:3 - Loaded \n{optim} successfully')
 
         self.logger.info(f'STEP:4 - Loading losses')
-        # losses = [smp.utils.losses.DiceLoss(),
-        #           smp.utils.losses.CrossEntropyLoss(),
-        #           smp.utils.losses.JaccardLoss()]
-        losses = smp.losses.DiceLoss(mode='multilabel', from_logits=False)
-
-        self.logger.info(f'STEP:5 - Starting the training loop')
+        loss = CE_loss
+        self.logger.info(f'STEP:4 - Loading losses successfully')
 
         # progress bar outer for epoch
+        self.logger.info(f'STEP:5 - Starting the training loop')
         pbar_out_train = tqdm(total=self.num_epochs, position=0)
         pbar_out_test = tqdm(total=self.num_epochs, position=2)
 
@@ -264,14 +256,20 @@ class TrainBaseline:
         best_model = None
         best_epoch = 0
 
-        # put 0's
-
         # loop through the epochs
         for epoch in range(self.num_epochs):
 
             phase = 'train'
+
             # run the train step
-            epoch_loss, epoch_accuracy, epoch_iou, epoch_f1, epoch_f1_beta = self.model_step(epoch, phase, model, train_generator, optim, losses, scheduler, pbar_train)
+            epoch_loss, epoch_accuracy, epoch_iou, epoch_f1 = self.model_step(epoch,
+                                                                                phase, 
+                                                                                model, 
+                                                                                train_generator, 
+                                                                                optim, 
+                                                                                loss, 
+                                                                                scheduler, 
+                                                                                pbar_train)
 
             # save the best model
             if best_f1 < epoch_f1:
@@ -283,24 +281,31 @@ class TrainBaseline:
                            f' | Loss:{epoch_loss:.4f}' \
                            f' | IOU:{epoch_iou:.4f}' \
                            f' | F1:{epoch_f1:.4f}' \
-                           f' | F1_beta:{epoch_f1_beta:.4f}' \
                            f' | Accuracy:{epoch_accuracy:.4f}'
             pbar_out_train.set_description(train_string)
 
             phase = 'test'
+
             # run the test step
-            epoch_loss, epoch_accuracy, epoch_iou, epoch_f1, epoch_f1_beta = self.model_step(epoch, phase, model, test_generator, optim, losses, scheduler, pbar_test)
+            epoch_loss, epoch_accuracy, epoch_iou, epoch_f1 = self.model_step(epoch, 
+                                                                                phase,
+                                                                                model, 
+                                                                                test_generator, 
+                                                                                optim, 
+                                                                                loss, 
+                                                                                scheduler, 
+                                                                                pbar_test)
 
             test_string = f'Main Loop  - {phase}:  Epoch:{epoch}' \
                           f' | Loss:{epoch_loss:.4f}' \
                           f' | IOU:{epoch_iou:.4f}' \
                           f' | F1:{epoch_f1:.4f}' \
-                          f' | F1_beta:{epoch_f1_beta:.4f}' \
                           f' | Accuracy:{epoch_accuracy:.4f}'
             pbar_out_test.set_description(test_string)
 
             pbar_out_train.update(1)
             pbar_out_test.update(1)
+
 
             print('\n\n\n\n')
             print('-' * 180)
@@ -320,11 +325,11 @@ class TrainBaseline:
         # run the last epoch as best model for visualization
         phase = 'train'
         # run the train step
-        self.model_step(epoch + 1, phase, best_model, train_generator, optim, losses, scheduler, pbar_train)
+        self.model_step(epoch + 1, phase, best_model, train_generator, optim, loss, scheduler, pbar_train)
 
         phase = 'test'
         # run the test step
-        self.model_step(epoch + 1, phase, best_model, test_generator, optim, losses, scheduler, pbar_test)
+        self.model_step(epoch + 1, phase, best_model, test_generator, optim, loss, scheduler, pbar_test)
 
     def model_step(self, epoch, phase, model, generator, optimizer, criterion, scheduler, pbar):
         """
@@ -342,13 +347,6 @@ class TrainBaseline:
             model.train()
         else:
             model.eval()
-
-        # running loss for the training
-        running_loss = 0.0
-        running_accuracy = 0.0
-        running_f1 = 0.0
-        running_f1_beta = 0.0
-        running_iou = 0.0
 
         # used to get top,worst and random images
         all_f1_scores = []
@@ -375,14 +373,14 @@ class TrainBaseline:
                 # calculate the loss
                 loss = criterion(output, masks)
 
-                tp, fp, fn, tn = smp.metrics.get_stats(output, masks, mode='multilabel', threshold=0.5)
+                # update the loss 
+                self.update_loss(loss)
 
-                # then compute metrics with required reduction (see metric docs)
-                iou_score = smp.metrics.iou_score(tp, fp, fn, tn, reduction="micro")
-                f1_score = smp.metrics.f1_score(tp, fp, fn, tn, reduction="micro")
-                f2_score = smp.metrics.fbeta_score(tp, fp, fn, tn, beta=2, reduction="micro")
-                accuracy = smp.metrics.accuracy(tp, fp, fn, tn, reduction="macro")
-                recall = smp.metrics.recall(tp, fp, fn, tn, reduction="micro-imagewise")
+                # calculate the metrics
+                metrics = eval_metrics(output, masks, self.num_classes)
+
+                # udpate the metrics
+                self.update_metrics(*metrics)
 
                 # backward + optimize only if in training phase
                 if phase == 'train':
@@ -390,25 +388,25 @@ class TrainBaseline:
                     loss.backward()
                     optimizer.step()
 
-                # accumulate loss
-                running_loss += loss.item()
-                running_iou += iou_score
-                running_f1 += f1_score
-                running_f1_beta += f2_score
-                running_accuracy += accuracy
+                # TODO: add the individual f1-score calcualtion for top, bottom and random image selection
 
-                # calculate the individual f1 only
-                for i_idx, pred in enumerate(output):
-                    i_tp, i_fp, i_fn, i_tn = smp.metrics.get_stats(pred, masks[i_idx], mode='multilabel', threshold=0.5)
+                # calculate the batch acc and iou
+                pixel_acc = 1.0 * metrics[0] / (np.spacing(1) + metrics[1])
+                IoU = 1.0 * metrics[2] / (np.spacing(1) + metrics[3])
+                dice = (2 * IoU) / (IoU + 1)
 
-                    all_f1_scores.append(smp.metrics.f1_score(i_tp, i_fp, i_fn, i_tn, reduction="micro").cpu().numpy())
+                mIoU = IoU.mean()
+                mDice = dice.mean()
+                
+                class_iou = dict(zip(range(self.num_classes), np.round(IoU, 3))),
+                class_dice = dict(zip(range(self.num_classes), np.round(dice, 3)))
 
                 pbar.set_description(f'Inner Loop - {phase:<5}: Epoch:{epoch} | Loss:{loss.item():.4f}'
-                                     f' | IOU:{iou_score:.4f}'
-                                     f' | F1:{f1_score:.4f}'
-                                     f' | F1_beta:{f2_score:.4f}'
-                                     f' | Accuracy:{accuracy:.4f}'
-                                     f' | Recall:{recall:.4f}')
+                                     f' | mIOU:{mIoU:.4f}'
+                                     f' | mDice:{mDice:.4f}'
+                                     f' | Accuracy:{pixel_acc:.4f}'
+                                     f' | IOU:{class_iou}'
+                                     f' | Dice:{class_dice}')
                 # update the counter
                 pbar.update(1)
 
@@ -418,18 +416,19 @@ class TrainBaseline:
         if phase == 'train':
             scheduler.step()
 
-        epoch_loss = running_loss / len(generator)
-        epoch_accuracy = running_accuracy / len(generator)
-        epoch_iou = running_iou / len(generator)
-        epoch_f1 = running_f1 / len(generator)
-        epoch_f1_beta = running_f1_beta / len(generator)
+        # get epoch based metrics
+        self.pixel_acc, self.mIoU, self.mDice, self.class_iou, self.class_dice = self.get_metrics()
+
+        epoch_loss = self.loss.average
+        epoch_accuracy = self.pixel_acc
+        epoch_iou = self.mIoU
+        epoch_f1 = self.mDice
 
         # log the scaler values here to tensorboard
         self.writer.add_scalar(f'{phase}-loss', epoch_loss, epoch)
         self.writer.add_scalar(f'{phase}-accuracy', epoch_accuracy, epoch)
         self.writer.add_scalar(f'{phase}-iou', epoch_iou, epoch)
         self.writer.add_scalar(f'{phase}-f1', epoch_f1, epoch)
-        self.writer.add_scalar(f'{phase}-f1_beta', epoch_f1_beta, epoch)
 
         # log every ten epochs
         # if epoch % 10 == 0:
@@ -452,7 +451,7 @@ class TrainBaseline:
         #     pbar.set_description(f'Generating Worst performing predictions ...')
         #     self.generate_predictions_figure(epoch, generator, model, num_of_samples, f'{phase}-worst', sorted_indices[:num_of_samples])
 
-        return epoch_loss, epoch_accuracy, epoch_iou, epoch_f1, epoch_f1_beta
+        return epoch_loss, epoch_accuracy, epoch_iou, epoch_f1
 
     def generate_predictions_figure(self, epoch, generator, model, num_of_samples, title, index):
         """

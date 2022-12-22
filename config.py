@@ -1,3 +1,5 @@
+import logging
+
 # global path  variables
 PIXELWISE_PATCHES_PATH = '/mnt/sda2/coarse_segmentation/data/patches/pixel_wise/'
 COARSEWISE_PATCHES_PATH = '/mnt/sda2/coarse_segmentation/data/patches/coarse_wise/'
@@ -28,3 +30,6 @@ DILATED_MOBILENET_MODEL = 'dilated_mb_net'
 UNET_MODEL = 'unet'
 DEEPLAB_MODEL = 'deeplab'
 SEGFORMER_MODEL = 'segformer'
+
+# logger
+LOG_FORMATTER = logging.Formatter("%(asctime)s  %(name)s  %(levelname)s  %(message)s")
