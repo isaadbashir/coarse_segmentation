@@ -112,7 +112,7 @@ class ResNet(nn.Module):
         output_size = (h//self.output_stride,w//self.output_stride)
 
         # resize the final output
-        x = torch.nn.functional.interpolate(x, size = output_size, mode='bilinear')
+        x = torch.nn.functional.interpolate(x, size = output_size, mode='bilinear', align_corners=True)
 
         return x, low_level_feat
 

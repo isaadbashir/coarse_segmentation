@@ -1,8 +1,6 @@
-import argparse
 import copy
 import os
 import random
-import shutil
 import albumentations as album
 import numpy as np
 import torch
@@ -11,16 +9,17 @@ from albumentations.pytorch import ToTensorV2
 from matplotlib import pyplot as plt
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
-from data.data_reader import DataReader
+from training.data.data_reader import DataReader
 import config
-from utils.losses import *
-from utils.metrics import *
-from models.model_builder import ModelBuilder
+from training.utils.losses import *
+from training.utils.metrics import *
+from training.models.model_builder import ModelBuilder
 from utils import *
+from time import time
 
-class TrainBaseline:
+class Trainer:
     """
-    Training the baseline coarse segmentation networks
+    Training the coarse segmentation networks
 
     """
 
@@ -35,7 +34,7 @@ class TrainBaseline:
         self.num_epochs = num_epochs
         self.batch_size = batch_size
         self.gpu_id = gpu_id
-        self.experiment_no = experiment_no
+        self.experiment_no = f"{experiment_no}_{str(time()).split('.')[0]}"
         self.config_no = self.experiment_no.split('_')[-1]
 
         # create directories path
@@ -43,13 +42,6 @@ class TrainBaseline:
         self.tensorboard_dir = os.path.join(self.output_path, 'tensorboard', self.experiment_no)
         self.models_dir = os.path.join(self.output_path, 'models', self.experiment_no)
         self.raw_dir = os.path.join(self.output_path, 'raw', self.experiment_no)
-
-        # check for debug
-        if 'debug' in self.experiment_no and os.path.exists(self.log_dir):
-            shutil.rmtree(self.log_dir, ignore_errors=True)
-            shutil.rmtree(self.models_dir, ignore_errors=True)
-            shutil.rmtree(self.raw_dir, ignore_errors=True)
-            shutil.rmtree(self.tensorboard_dir, ignore_errors=True)
 
         # create directories
         os.makedirs(self.log_dir, exist_ok=True)
@@ -67,24 +59,16 @@ class TrainBaseline:
         # set the gpu for usage
         torch.cuda.set_device(self.gpu_id)
 
-        # setup the loss and metrics 
-        self.initialize()
-
     def load_model(self):
         '''
         load the coarse semgentation models for training the baseline
         :return: model
         '''
 
-        model_builder = ModelBuilder(self.model_name, self.mini_patch_size)
-        
-        model = model_builder.get_model()
-
+        model = ModelBuilder(self.model_name, self.mini_patch_size, self.num_classes)
+     
         # put model to the GPU
-        model.cuda()
-
-        # print the network
-        torchsummary.summary(model, (3, self.patch_size, self.patch_size))
+        model.relocate()
 
         return model
 
@@ -122,16 +106,15 @@ class TrainBaseline:
         ])
 
         # create the data loader params
-        self.logger.info(f'STEP:2 - Creating params for data loaders {params}')
         params = {'batch_size': self.batch_size,
                   'shuffle': False,
                   'num_workers': 4,
                   'pin_memory': False}
-
+        self.logger.info(f'STEP:2 - Creating params for data loaders {params}')
         
         # create the paths for the train and test
-        train_patch_path = os.path.join(self.data_path, f'{self.patch_magnification}x', f'{self.mini_patch_size}x{self.mini_patch_size}', 'train')
-        test_patch_path = os.path.join(self.data_path, f'{self.patch_magnification}x', f'{self.mini_patch_size}x{self.mini_patch_size}', 'test')
+        train_patch_path = os.path.join(self.data_path, f'{self.patch_magnification}', f'{self.mini_patch_size}x{self.mini_patch_size}', 'train')
+        test_patch_path = os.path.join(self.data_path, f'{self.patch_magnification}', f'{self.mini_patch_size}x{self.mini_patch_size}', 'test')
 
         # create dataset reader
         data_reader = DataReader(data_dir=train_patch_path,
@@ -210,11 +193,11 @@ class TrainBaseline:
         mIoU = IoU.mean()
         mDice = dice.mean()
         return {
-            "Pixel_Accuracy": np.round(pixAcc, 3),
-            "Mean_IoU": np.round(mIoU, 3),
-            "Mean_Dice": np.round(mDice, 3),
-            "Class_IoU": dict(zip(range(self.num_classes), np.round(IoU, 3))),
-            "Class_Dice": dict(zip(range(self.num_classes), np.round(dice, 3)))
+            "Pixel_Accuracy": np.round(pixAcc, 2),
+            "Mean_IoU": np.round(mIoU, 2),
+            "Mean_Dice": np.round(mDice, 2),
+            "Class_IoU": dict(zip(range(self.num_classes), np.round(IoU, 2))),
+            "Class_Dice": dict(zip(range(self.num_classes), np.round(dice, 2)))
         }
 
     def train_model(self):
@@ -325,11 +308,25 @@ class TrainBaseline:
         # run the last epoch as best model for visualization
         phase = 'train'
         # run the train step
-        self.model_step(epoch + 1, phase, best_model, train_generator, optim, loss, scheduler, pbar_train)
+        self.model_step(epoch + 1, 
+                        phase, 
+                        best_model, 
+                        train_generator, 
+                        optim, 
+                        loss, 
+                        scheduler, 
+                        pbar_train)
 
         phase = 'test'
         # run the test step
-        self.model_step(epoch + 1, phase, best_model, test_generator, optim, loss, scheduler, pbar_test)
+        self.model_step(epoch + 1, 
+                        phase, 
+                        best_model, 
+                        test_generator, 
+                        optim, 
+                        loss, 
+                        scheduler, 
+                        pbar_test)
 
     def model_step(self, epoch, phase, model, generator, optimizer, criterion, scheduler, pbar):
         """
@@ -342,13 +339,18 @@ class TrainBaseline:
         :param loss:
         :return:
         """
+
+        # reset the and initialize the metrics again
+        self.initialize()
+
+        # check the training phase 
         if phase == 'train':
             # set the model in training mode
             model.train()
         else:
             model.eval()
 
-        # used to get top,worst and random images
+        # TODO: used to get top,worst and random images
         all_f1_scores = []
 
         # load the batch
@@ -359,7 +361,7 @@ class TrainBaseline:
             masks = masks.to(self.device)
 
             # permute the masks to match the output
-            masks = masks.permute(0, 3, 1, 2)
+            # masks = masks.permute(0, 3, 1, 2)
 
             # reset the optimizer gradients to zero for next epoch calculations
             optimizer.zero_grad()
@@ -369,6 +371,9 @@ class TrainBaseline:
 
                 # pass the images through the model and get output
                 output = model(images)
+
+                # resize the output to 512 for consistency
+                output = torch.nn.functional.interpolate(output, size = (self.patch_size, self.patch_size), mode='nearest')
 
                 # calculate the loss
                 loss = criterion(output, masks)
@@ -398,13 +403,13 @@ class TrainBaseline:
                 mIoU = IoU.mean()
                 mDice = dice.mean()
                 
-                class_iou = dict(zip(range(self.num_classes), np.round(IoU, 3))),
-                class_dice = dict(zip(range(self.num_classes), np.round(dice, 3)))
+                class_iou = dict(zip(range(self.num_classes), np.round(IoU, 2))),
+                class_dice = dict(zip(range(self.num_classes), np.round(dice, 2)))
 
                 pbar.set_description(f'Inner Loop - {phase:<5}: Epoch:{epoch} | Loss:{loss.item():.4f}'
-                                     f' | mIOU:{mIoU:.4f}'
-                                     f' | mDice:{mDice:.4f}'
-                                     f' | Accuracy:{pixel_acc:.4f}'
+                                     f' | mIOU:{mIoU:.2f}'
+                                     f' | mDice:{mDice:.2f}'
+                                     f' | Accuracy:{pixel_acc:.2f}'
                                      f' | IOU:{class_iou}'
                                      f' | Dice:{class_dice}')
                 # update the counter
@@ -417,8 +422,7 @@ class TrainBaseline:
             scheduler.step()
 
         # get epoch based metrics
-        self.pixel_acc, self.mIoU, self.mDice, self.class_iou, self.class_dice = self.get_metrics()
-
+        self.pixel_acc, self.mIoU, self.mDice, self.class_iou, self.class_dice = self.get_metrics().values()
         epoch_loss = self.loss.average
         epoch_accuracy = self.pixel_acc
         epoch_iou = self.mIoU
@@ -431,25 +435,15 @@ class TrainBaseline:
         self.writer.add_scalar(f'{phase}-f1', epoch_f1, epoch)
 
         # log every ten epochs
-        # if epoch % 10 == 0:
-        #     # log the images with predictions from random batch
-        #     num_of_samples = 12
-        #
-        #     # Get a random sample
-        #     pbar.set_description(f'Generating Random performing predictions ...')
-        #     random_index = random.sample(range(len(generator.dataset)), k=num_of_samples)
-        #     self.generate_predictions_figure(epoch, generator, model, num_of_samples, f'{phase}-random', random_index)
-        #
-        #     # # sort the array
-        #     sorted_indices = np.argsort(all_f1_scores)
-        #
-        #     # get the top instances
-        #     pbar.set_description(f'Generating Top performing predictions ...')
-        #     self.generate_predictions_figure(epoch, generator, model, num_of_samples, f'{phase}-top', sorted_indices[-num_of_samples:])
-        #
-        #     # get the worst instances
-        #     pbar.set_description(f'Generating Worst performing predictions ...')
-        #     self.generate_predictions_figure(epoch, generator, model, num_of_samples, f'{phase}-worst', sorted_indices[:num_of_samples])
+        if epoch % 10 == 0:
+            
+            # log the images with predictions from random batch
+            num_of_samples = 12
+        
+            # Get a random sample
+            pbar.set_description(f'Generating Random performing predictions ...')
+            random_index = random.sample(range(len(generator.dataset)), k=num_of_samples)
+            self.generate_predictions_figure(epoch, generator, model, num_of_samples, f'{phase}-random', random_index)
 
         return epoch_loss, epoch_accuracy, epoch_iou, epoch_f1
 
@@ -480,58 +474,10 @@ class TrainBaseline:
 
         with torch.set_grad_enabled(False):
             outputs = model(torch.from_numpy(images).cuda())
+            outputs = torch.nn.Softmax2d()(outputs)
             outputs = outputs.cpu().numpy()
 
         pred_fig = plot_image_prediction(images, masks, outputs, names, num_of_samples, self.num_classes)
         self.writer.add_figure(title, pred_fig, epoch)
-
-        pred_fig.clf()
         plt.close()
 
-
-if __name__ == '__main__':
-
-    parser = argparse.ArgumentParser(
-            description="Baseline trainer for Semantic Segmentation",
-            formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-
-    MODEL = 'unext'
-    DATA_PATH = '/home/saad/Desktop/temp_data/tnbc/'
-    SEMI_SPLIT_DIVISOR = 1
-    INPUT_SIZE = 512
-    NUM_CLASSES = config.REDUCED_NUBER_OF_CLASSES
-    INPUT_MAGNIFICATION = 10
-    BATCH_SIZE = 10
-    NUM_EPOCHS = 50
-    DATA_NAME = 'TNBC'
-    GPU = 0
-    OUTPUT_PATH = '/mnt/sda2/tnbc_segmetnation_v2/output/tnbc/'
-    EXPERIMENT_NO = f'm{MODEL}_d{DATA_NAME}_s{SEMI_SPLIT_DIVISOR}_p{INPUT_SIZE}_z{INPUT_MAGNIFICATION}_c{NUM_CLASSES}_baseline_aspp_1'
-
-    parser.add_argument("--data_path", default=DATA_PATH, help="Path to data folder location")
-    parser.add_argument("--model", default=MODEL, help="Model name where there are following models: unet, deeplab, segnet, fcn etc. by default its unet")
-    parser.add_argument("--semi_split", default=SEMI_SPLIT_DIVISOR, help="Semi_supervised split [1, 2, 4, 8] by default its 1")
-    parser.add_argument("--input_size", default=INPUT_SIZE, help="Network input size by default its 512")
-    parser.add_argument("--input_mag", default=INPUT_MAGNIFICATION, help="Network input magnification [10, 20, 40] by default its 20 ")
-    parser.add_argument("--num_classes", default=NUM_CLASSES, help="Number of classes in the dataset")
-    parser.add_argument("--batch_size", default=BATCH_SIZE, help="Batch size where by default its 8")
-    parser.add_argument("--num_epochs", default=NUM_EPOCHS, help="Number of epochs by default its 100")
-    parser.add_argument("--data_name", default=DATA_NAME, help="Dataset name e.g., tnbc")
-    parser.add_argument("--output_path", default=OUTPUT_PATH, help="Output data folder location")
-    parser.add_argument("--gpu_id", default=GPU, type=int, help="gpu id")
-
-    args = vars(parser.parse_args())
-
-    baseline_trainer = TrainBaseline(args['model'],
-                                     args['data_path'],
-                                     args['semi_split'],
-                                     args['input_size'],
-                                     args['input_mag'],
-                                     args['output_path'],
-                                     args['num_classes'],
-                                     args['num_epochs'],
-                                     args['batch_size'],
-                                     args['gpu_id'],
-                                     EXPERIMENT_NO)
-
-    baseline_trainer.train_model()

@@ -82,7 +82,7 @@ def plot_image_prediction(images, masks, outputs, names, num_of_images, num_of_c
     outputs = outputs.transpose(0, 2, 3, 1)
 
     pred_mask = create_mask(outputs)
-    masks = create_mask(masks)
+    # masks = create_mask(masks)
 
     fig, ax = plt.subplots(num_of_images, 4, figsize=(8, 24))
 

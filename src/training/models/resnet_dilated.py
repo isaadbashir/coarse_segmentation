@@ -55,7 +55,7 @@ class ResNet(nn.Module):
         self.resnet_layers = resnet_layers
         self.inplanes = 64
         super(ResNet, self).__init__()
-        blocks = [1, 2, 4]
+
         if output_stride == 1:
             strides = [1, 2, 2, 2]
             dilations = [1, 1, 1, 1]
