@@ -11,6 +11,7 @@ def main(args):
                                      args['input_mag'],
                                      args['output_path'],
                                      args['num_classes'],
+                                     args['class_names'],
                                      args['num_epochs'],
                                      args['batch_size'],
                                      args['gpu_id'],
@@ -32,10 +33,11 @@ if __name__ == '__main__':
     NUM_CLASSES = config.TNBC_NUMBER_OF_CLASSES
     INPUT_MAGNIFICATION = config.PATCHES_MAGNIFICATION_LEVEL
     BATCH_SIZE = 24
-    NUM_EPOCHS = 5
+    NUM_EPOCHS = 100
     DATA_NAME = 'TNBC'
     GPU = 0
     OUTPUT_PATH = '/mnt/sda2/coarse_segmentation/model_output/'
+    CLASS_NAMES = ['BG', 'Tumor','Stroma','Inflam', 'Dead']
 
     EXPERIMENT_NO = f'm{MODEL}_d{DATA_NAME}_p{INPUT_SIZE}_z{INPUT_MAGNIFICATION}_c{NUM_CLASSES}_mp{MINI_PATCH_SIZE}'
 
@@ -50,6 +52,8 @@ if __name__ == '__main__':
     parser.add_argument("--output_path", default=OUTPUT_PATH, help="Output data folder location")
     parser.add_argument("--gpu_id", default=GPU, type=int, help="gpu id")
     parser.add_argument("--mini_patch_size", default=MINI_PATCH_SIZE, help="Mini patch size [1, 8, 16, 32]")
+    parser.add_argument("--class_names", default=CLASS_NAMES, help="Array of class names")
+
     args = vars(parser.parse_args())
 
     main(args)

@@ -23,7 +23,7 @@ class Trainer:
 
     """
 
-    def __init__(self, model_name, data_path, mini_patch_size, patch_size, patch_magnification, output_path, num_classes, num_epochs, batch_size, gpu_id, experiment_no):
+    def __init__(self, model_name, data_path, mini_patch_size, patch_size, patch_magnification, output_path, num_classes, class_names, num_epochs, batch_size, gpu_id, experiment_no):
         self.model_name = model_name
         self.data_path = data_path
         self.patch_size = patch_size
@@ -36,6 +36,7 @@ class Trainer:
         self.gpu_id = gpu_id
         self.experiment_no = f"{experiment_no}_{str(time()).split('.')[0]}"
         self.config_no = self.experiment_no.split('_')[-1]
+        self.class_names = class_names
 
         # create directories path
         self.log_dir = os.path.join(self.output_path, 'logs', self.experiment_no)
@@ -196,8 +197,8 @@ class Trainer:
             "Pixel_Accuracy": np.round(pixAcc, 2),
             "Mean_IoU": np.round(mIoU, 2),
             "Mean_Dice": np.round(mDice, 2),
-            "Class_IoU": dict(zip(range(self.num_classes), np.round(IoU, 2))),
-            "Class_Dice": dict(zip(range(self.num_classes), np.round(dice, 2)))
+            "Class_IoU": dict(zip(self.class_names, np.round(IoU, 2))),
+            "Class_Dice": dict(zip(self.class_names, np.round(dice, 2)))
         }
 
     def train_model(self):
@@ -403,8 +404,8 @@ class Trainer:
                 mIoU = IoU.mean()
                 mDice = dice.mean()
                 
-                class_iou = dict(zip(range(self.num_classes), np.round(IoU, 2))),
-                class_dice = dict(zip(range(self.num_classes), np.round(dice, 2)))
+                class_iou = dict(zip(self.class_names, np.round(IoU, 2))),
+                class_dice = dict(zip(self.class_names, np.round(dice, 2)))
 
                 pbar.set_description(f'Inner Loop - {phase:<5}: Epoch:{epoch} | Loss:{loss.item():.4f}'
                                      f' | mIOU:{mIoU:.2f}'
@@ -435,7 +436,7 @@ class Trainer:
         self.writer.add_scalar(f'{phase}-f1', epoch_f1, epoch)
 
         # log every ten epochs
-        if epoch % 10 == 0:
+        if epoch % 2 == 0:
             
             # log the images with predictions from random batch
             num_of_samples = 12
@@ -474,6 +475,7 @@ class Trainer:
 
         with torch.set_grad_enabled(False):
             outputs = model(torch.from_numpy(images).cuda())
+            outputs = torch.nn.functional.interpolate(outputs, size = (self.patch_size, self.patch_size), mode='nearest')
             outputs = torch.nn.Softmax2d()(outputs)
             outputs = outputs.cpu().numpy()
 

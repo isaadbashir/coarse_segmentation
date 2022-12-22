@@ -32,6 +32,7 @@ def group_mask_tnbc_classes(mask):
     Groups the minor mask classes into major ones according to the info given in the paper
     :param mask:
     """
+    
     # tumor cluster
     mask[mask == 19] = 1
     mask[mask == 20] = 1
