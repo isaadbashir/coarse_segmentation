@@ -2,7 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import logging
 import sys
-import config
+import src.config as config
 
 def get_console_handler():
     console_handler = logging.StreamHandler(sys.stdout)
@@ -116,7 +116,7 @@ def plot_image_prediction(images, masks, outputs, names, num_of_images, num_of_c
 
         pred_mask_i_overlay = np.ma.masked_where(pred_mask_i == 0, pred_mask_i)
 
-        ax[i, 3].imshow(images[i, ...].astype('uint8'))
+        ax[i, 3].imshow(images[i, ...])
         ax[i, 3].imshow(pred_mask_i_overlay.astype('uint8'), interpolation='none', cmap='jet', alpha=0.5)
 
         ax[i, 0].set_ylabel(names[i], fontsize=6)

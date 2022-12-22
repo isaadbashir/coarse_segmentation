@@ -6,11 +6,10 @@ import albumentations as album
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
-import torchvision.transforms as transforms
 from albumentations.pytorch import ToTensorV2
 from torch.utils.data import Dataset as BaseDataset
-import config
-import utils
+import src.config as config
+import src.utils as utils
 import cv2
 
 
