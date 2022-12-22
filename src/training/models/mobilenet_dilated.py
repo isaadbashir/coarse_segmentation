@@ -66,8 +66,9 @@ class InvertedResidual(nn.Module):
 
 
 class MobileNetV2(nn.Module):
-    def __init__(self, block,  output_stride=8, BatchNorm=None, width_mult=1., pretrained=True):
+    def __init__(self, BatchNorm=None, output_stride=8,  width_mult=1.0, pretrained=True):
         super(MobileNetV2, self).__init__()
+        block = InvertedResidual
         input_channel = 32
         current_stride = 1
         rate = 1
@@ -130,6 +131,7 @@ class MobileNetV2(nn.Module):
     def _initialize_weights(self):
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
+
                 torch.nn.init.kaiming_normal_(m.weight)
             elif isinstance(m, nn.BatchNorm2d):
                 m.weight.data.fill_(1)
@@ -140,7 +142,7 @@ class MobileNetV2(nn.Module):
 
 if __name__ == "__main__":
     input = torch.rand(1, 3, 512, 512)
-    model = MobileNetV2(InvertedResidual, output_stride=32, BatchNorm=nn.BatchNorm2d)
+    model = MobileNetV2(BatchNorm=nn.BatchNorm2d, output_stride=32)
     output, low_level_feat = model(input)
     print(output.size())
     print(low_level_feat.size())
