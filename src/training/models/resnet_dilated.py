@@ -7,6 +7,31 @@ import torchsummary as torchsummary
 
 import os
 
+from torch.nn.parameter import Parameter
+
+class eca_layer(nn.Module):
+    """Constructs a ECA module.
+    Args:
+        channel: Number of channels of the input feature map
+        k_size: Adaptive selection of kernel size
+    """
+    def __init__(self, channel, k_size=3):
+        super(eca_layer, self).__init__()
+        self.avg_pool = nn.AdaptiveAvgPool2d(1)
+        self.conv = nn.Conv1d(1, 1, kernel_size=k_size, padding=(k_size - 1) // 2, bias=False) 
+        self.sigmoid = nn.Sigmoid()
+
+    def forward(self, x):
+        # feature descriptor on the global spatial information
+        y = self.avg_pool(x)
+
+        # Two different branches of ECA module
+        y = self.conv(y.squeeze(-1).transpose(-1, -2)).transpose(-1, -2).unsqueeze(-1)
+
+        # Multi-scale information fusion
+        y = self.sigmoid(y)
+
+        return x * y.expand_as(x)
 
 class Bottleneck(nn.Module):
     expansion = 4
@@ -24,6 +49,7 @@ class Bottleneck(nn.Module):
         self.downsample = downsample
         self.stride = stride
         self.dilation = dilation
+        self.eca = eca_layer(planes*4, k_size=1)
 
     def forward(self, x):
         residual = x
@@ -35,9 +61,11 @@ class Bottleneck(nn.Module):
         out = self.conv2(out)
         out = self.bn2(out)
         out = self.relu(out)
+        
 
         out = self.conv3(out)
         out = self.bn3(out)
+        out = self.eca(out)
 
         if self.downsample is not None:
             residual = self.downsample(x)
@@ -66,8 +94,8 @@ class ResNet(nn.Module):
             strides = [1, 2, 1, 1]
             dilations = [1, 1, 2, 4]
         elif output_stride == 32:
-            strides = [2, 2, 2, 2]
-            dilations = [1, 2, 4, 8]
+            strides = [1, 2, 2, 2]
+            dilations = [1, 2, 2, 4]
             # 2^(N-1) formula
         else:
             raise NotImplementedError
@@ -83,7 +111,9 @@ class ResNet(nn.Module):
         self.layer2 = self._make_layer(block, 128, layers[1], stride=strides[1], dilation=dilations[1], BatchNorm=BatchNorm)
         self.layer3 = self._make_layer(block, 256, layers[2], stride=strides[2], dilation=dilations[2], BatchNorm=BatchNorm)
         self.layer4 = self._make_layer(block, 512, layers[3], stride=strides[3], dilation=dilations[3], BatchNorm=BatchNorm)
+
         self._init_weight()
+
 
         if pretrained:
             self._load_pretrained_model()
@@ -110,12 +140,33 @@ class ResNet(nn.Module):
         x = self.bn1(x)
         x = self.relu(x)
         x = self.maxpool(x)
-        x = self.layer1(x)
-        low_level_feat = x
-        x = self.layer2(x)
-        x = self.layer3(x)
-        x = self.layer4(x)
-        return x, low_level_feat
+        x1 = self.layer1(x)
+        low_level_feat = x1
+        x2 = self.layer2(x1)
+        x3 = self.layer3(x2)
+        x4 = self.layer4(x3)
+
+        h,w = x4.size()[2:]
+        avgp = nn.AdaptiveAvgPool2d((h,w))
+        maxp = nn.AdaptiveMaxPool2d((h,w))
+
+        avg_x = avgp(x)
+        avg_x1 = avgp(x1)
+        avg_x2 = avgp(x2)
+        avg_x3 = avgp(x3)
+
+        avg_x4 = torch.cat((avg_x,avg_x1,avg_x2,avg_x3,x4), dim = 1)
+
+        max_x = maxp(x)
+        max_x1 = maxp(x1)
+        max_x2 = maxp(x2)
+        max_x3 = maxp(x3)
+
+        max_x4 = torch.cat((max_x,max_x1,max_x2,max_x3,x4), dim = 1)
+
+        # x4 = torch.cat((avg_x4,max_x4), dim = 1)
+
+        return avg_x4, low_level_feat
 
     def _init_weight(self):
         for m in self.modules():
@@ -175,7 +226,7 @@ def ResNet50(output_stride, BatchNorm, pretrained=True):
 if __name__ == "__main__":
     import torch
 
-    model = ResNet50(BatchNorm=nn.BatchNorm2d, pretrained=True, output_stride=8)
+    model = ResNet50(BatchNorm=nn.BatchNorm2d, pretrained=True, output_stride=16)
     # input = torch.rand(1, 3, 224, 224)
     # output, low_level_feat = model(input)
     # print(output.size())
