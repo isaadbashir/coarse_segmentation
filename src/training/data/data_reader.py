@@ -6,6 +6,8 @@ import albumentations as album
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
+import torch.nn.functional as F
+import torch.utils.data as data
 from albumentations.pytorch import ToTensorV2
 from torch.utils.data import Dataset as BaseDataset
 import src.config as config
@@ -103,11 +105,11 @@ if __name__ == '__main__':
                             target_size=target_size,
                             transformation=transform)
 
-    train_generator = torch.utils.data.DataLoader(data_reader, **params)
+    train_generator = data.DataLoader(data_reader, **params)
 
     X, Y, N = next(iter(train_generator))
     print(X.shape, Y.shape)
 
-    fig = utils.plot_image_prediction(X.cpu().numpy(), Y.numpy(), torch.nn.functional.one_hot(Y.to(torch.int64), num_classes=config.TNBC_NUMBER_OF_CLASSES).permute(0,3,1,2).numpy(), N, 5, 5)
+    fig = utils.plot_image_prediction(X.cpu().numpy(), Y.numpy(), F.one_hot(Y.to(torch.int64), num_classes=config.TNBC_NUMBER_OF_CLASSES).permute(0,3,1,2).numpy(), N, 5, 5)
 
     plt.show()
