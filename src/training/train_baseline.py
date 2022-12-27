@@ -254,7 +254,7 @@ class Trainer:
             phase = 'train'
 
             # run the train step
-            epoch_loss, epoch_accuracy, epoch_iou, epoch_f1 = self.model_step(epoch,
+            epoch_loss, epoch_accuracy, epoch_iou, epoch_f1, epoch_class_iou, epoch_class_dice = self.model_step(epoch,
                                                                                 phase, 
                                                                                 model, 
                                                                                 train_generator, 
@@ -270,16 +270,20 @@ class Trainer:
                 best_epoch = epoch
 
             train_string = f'Main Loop  - {phase}: Epoch:{epoch}' \
-                           f' | Loss:{epoch_loss:.4f}' \
-                           f' | IOU:{epoch_iou:.4f}' \
-                           f' | F1:{epoch_f1:.4f}' \
-                           f' | Accuracy:{epoch_accuracy:.4f}'
+                            f' | Loss:{epoch_loss:.4f}' \
+                            f' | IOU:{epoch_iou:.4f}' \
+                            f' | F1:{epoch_f1:.4f}' \
+                            f' | Accuracy:{epoch_accuracy:.4f}' \
+                            f' | IOU:{epoch_class_iou}' \
+                            f' | Dice:{epoch_class_dice}'
+
+
             pbar_out_train.set_description(train_string)
 
             phase = 'test'
 
             # run the test step
-            epoch_loss, epoch_accuracy, epoch_iou, epoch_f1 = self.model_step(epoch, 
+            epoch_loss, epoch_accuracy, epoch_iou, epoch_f1, epoch_class_iou, epoch_class_dice = self.model_step(epoch, 
                                                                                 phase,
                                                                                 model, 
                                                                                 test_generator, 
@@ -288,11 +292,14 @@ class Trainer:
                                                                                 scheduler, 
                                                                                 pbar_test)
 
-            test_string = f'Main Loop  - {phase}:  Epoch:{epoch}' \
-                          f' | Loss:{epoch_loss:.4f}' \
-                          f' | IOU:{epoch_iou:.4f}' \
-                          f' | F1:{epoch_f1:.4f}' \
-                          f' | Accuracy:{epoch_accuracy:.4f}'
+            test_string = f'Main Loop  - {phase}: Epoch:{epoch}' \
+                            f' | Loss:{epoch_loss:.4f}' \
+                            f' | IOU:{epoch_iou:.4f}' \
+                            f' | F1:{epoch_f1:.4f}' \
+                            f' | Accuracy:{epoch_accuracy:.4f}' \
+                            f' | IOU:{epoch_class_iou}' \
+                            f' | Dice:{epoch_class_dice}'
+
             pbar_out_test.set_description(test_string)
 
             pbar_out_train.update(1)
@@ -385,7 +392,7 @@ class Trainer:
                 output = F.interpolate(output, size = (self.patch_size, self.patch_size), mode='nearest')
 
                 # calculate the loss
-                loss = criterion(output, masks, temperature = 0.2)
+                loss = criterion(output, masks, temperature = 1)
 
                 # update the loss 
                 self.update_loss(loss)
@@ -402,8 +409,6 @@ class Trainer:
                     loss.backward()
                     optimizer.step()
 
-                # TODO: add the individual f1-score calcualtion for top, bottom and random image selection
-
                 # calculate the batch acc and iou
                 pixel_acc = 1.0 * metrics[0] / (np.spacing(1) + metrics[1])
                 IoU = 1.0 * metrics[2] / (np.spacing(1) + metrics[3])
@@ -414,6 +419,14 @@ class Trainer:
                 
                 class_iou = dict(zip(self.class_names, np.round(IoU, 2))),
                 class_dice = dict(zip(self.class_names, np.round(dice, 2)))
+
+
+                # calculate the individual dice only
+                for i_idx, pred in enumerate(output):
+                    i_metric, _ = metrics, confusion_matrix = eval_metrics(pred[None,:], masks[i_idx][None,:], self.num_classes)
+                    IoU = 1.0 * i_metric[2] / (np.spacing(1) + i_metric[3])
+                    dice = (2 * IoU) / (IoU + 1)
+                    all_f1_scores.append(dice.mean())
 
                 pbar.set_description(f'Inner Loop - {phase:<5}: Epoch:{epoch} | Loss:{loss.item():.4f}'
                                      f' | mIOU:{mIoU:.2f}'
@@ -436,6 +449,8 @@ class Trainer:
         epoch_accuracy = self.pixel_acc
         epoch_iou = self.mIoU
         epoch_f1 = self.mDice
+        epoch_class_iou = self.class_iou
+        epoch_class_dice = self.class_dice
 
         # log the scaler values here to tensorboard
         self.writer.add_scalar(f'{phase}-loss', epoch_loss, epoch)
@@ -447,7 +462,6 @@ class Trainer:
         # log every ten epochs
         if epoch % 2 == 0:
 
-            print(self.confusion_matrix)
             # log the confusion matrix
             cm_fig = plot_confusion_matrix(self.confusion_matrix, self.class_names)
             self.writer.add_figure(f'{phase}-confusion_matrix', cm_fig, epoch)
@@ -458,10 +472,22 @@ class Trainer:
         
             # Get a random sample
             pbar.set_description(f'Generating Random performing predictions ...')
+            random.seed(None)
             random_index = random.sample(range(len(generator.dataset)), k=num_of_samples)
             self.generate_predictions_figure(epoch, generator, model, num_of_samples, f'{phase}-random', random_index)
 
-        return epoch_loss, epoch_accuracy, epoch_iou, epoch_f1
+            # sort the array
+            sorted_indices = np.argsort(all_f1_scores)
+        
+            # get the top instances
+            pbar.set_description(f'Generating Top performing predictions ...')
+            self.generate_predictions_figure(epoch, generator, model, num_of_samples, f'{phase}-top', sorted_indices[-num_of_samples:])
+        
+            # get the worst instances
+            pbar.set_description(f'Generating Worst performing predictions ...')
+            self.generate_predictions_figure(epoch, generator, model, num_of_samples, f'{phase}-worst', sorted_indices[:num_of_samples])
+
+        return epoch_loss, epoch_accuracy, epoch_iou, epoch_f1, epoch_class_iou, epoch_class_dice
 
     def generate_predictions_figure(self, epoch, generator, model, num_of_samples, title, index):
         """

@@ -42,7 +42,7 @@ if __name__ == '__main__':
     OUTPUT_PATH = '/mnt/sda2/coarse_segmentation/model_output/'
     CLASS_NAMES = ['BG', 'Tumor','Stroma','Inflam', 'Dead']
 
-    EXPERIMENT_NO = f'd{DATA_NAME}_p{INPUT_SIZE}_z{INPUT_MAGNIFICATION}_c{NUM_CLASSES}_mp{MINI_PATCH_SIZE}_m{MODEL}_temp02'
+    EXPERIMENT_NO = f'd{DATA_NAME}_p{INPUT_SIZE}_z{INPUT_MAGNIFICATION}_c{NUM_CLASSES}_mp{MINI_PATCH_SIZE}_m{MODEL}'
 
     parser.add_argument("--data_path", default=DATA_PATH, help="Path to data folder location")
     parser.add_argument("--model", default=MODEL, help="Model name where there are following models: unet, deeplab, segnet, fcn etc. by default its unet")

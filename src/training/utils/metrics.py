@@ -61,7 +61,7 @@ def batch_confusion_matrix(output, target, num_class):
     y = num_class * target + predict
     y = torch.bincount(y)
     if len(y) < num_class * num_class:
-        y = torch.cat((y, torch.zeros(num_class * num_class - len(y), dtype=torch.long)))
+        y = torch.cat((y, torch.zeros(num_class * num_class - len(y), dtype=torch.long).cuda()))
     y = y.reshape(num_class, num_class).cpu().numpy()
     
     return y
