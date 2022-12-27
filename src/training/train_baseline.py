@@ -4,6 +4,8 @@ import random
 import albumentations as album
 import numpy as np
 import torch
+import torch.nn.functional as F
+import torch.utils.data as data
 import torchsummary
 from albumentations.pytorch import ToTensorV2
 from matplotlib import pyplot as plt
@@ -130,8 +132,8 @@ class Trainer:
 
         # create the data generator for pytorch
         self.logger.info(f'STEP:2 - Loading the data files from \ntrain:{train_patch_path} \ntest: {test_patch_path}')
-        train_generator = torch.utils.data.DataLoader(data_reader, **params)
-        test_generator = torch.utils.data.DataLoader(data_test_reader, **params)
+        train_generator = data.DataLoader(data_reader, **params)
+        test_generator = data.DataLoader(data_test_reader, **params)
 
         return train_generator, test_generator
 
@@ -166,9 +168,10 @@ class Trainer:
         self.total_union = 0
         self.total_correct = 0
         self.total_label = 0
-        self.mIoU = 0
-        self.mDice =0
+        self.mIoU = []
+        self.mDice = []
         self.pixel_acc = 0
+        self.confusion_matrix = np.zeros((self.num_classes, self.num_classes))
         self.class_iou = {}
         self.class_dice = {}
 
@@ -179,11 +182,12 @@ class Trainer:
         mean = loss.sum() / n
         self.loss.update(mean.item())
 
-    def update_metrics(self, correct, labeled, inter, union):
+    def update_metrics(self, correct, labeled, inter, union, confusion_matrix):
         self.total_correct += correct
         self.total_label += labeled
         self.total_inter += inter
         self.total_union += union
+        self.confusion_matrix += confusion_matrix
 
     def get_metrics(self):
      
@@ -193,12 +197,16 @@ class Trainer:
         
         mIoU = IoU.mean()
         mDice = dice.mean()
+
+        confusion_matrix = self.confusion_matrix.astype('float') / self.confusion_matrix.sum(axis=1)[:, np.newaxis]
+
         return {
             "Pixel_Accuracy": np.round(pixAcc, 2),
             "Mean_IoU": np.round(mIoU, 2),
             "Mean_Dice": np.round(mDice, 2),
             "Class_IoU": dict(zip(self.class_names, np.round(IoU, 2))),
-            "Class_Dice": dict(zip(self.class_names, np.round(dice, 2)))
+            "Class_Dice": dict(zip(self.class_names, np.round(dice, 2))),
+            "Confusion_Matrix": confusion_matrix
         }
 
     def train_model(self):
@@ -309,7 +317,7 @@ class Trainer:
         # run the last epoch as best model for visualization
         phase = 'train'
         # run the train step
-        self.model_step(epoch + 1, 
+        self.model_step(self.num_epochs, 
                         phase, 
                         best_model, 
                         train_generator, 
@@ -320,7 +328,7 @@ class Trainer:
 
         phase = 'test'
         # run the test step
-        self.model_step(epoch + 1, 
+        self.model_step(self.num_epochs, 
                         phase, 
                         best_model, 
                         test_generator, 
@@ -374,19 +382,19 @@ class Trainer:
                 output = model(images)
 
                 # resize the output to 512 for consistency
-                output = torch.nn.functional.interpolate(output, size = (self.patch_size, self.patch_size), mode='nearest')
+                output = F.interpolate(output, size = (self.patch_size, self.patch_size), mode='nearest')
 
                 # calculate the loss
-                loss = criterion(output, masks)
+                loss = criterion(output, masks, temperature = 0.2)
 
                 # update the loss 
                 self.update_loss(loss)
 
                 # calculate the metrics
-                metrics = eval_metrics(output, masks, self.num_classes)
+                metrics, confusion_matrix = eval_metrics(output, masks, self.num_classes)
 
                 # udpate the metrics
-                self.update_metrics(*metrics)
+                self.update_metrics(*metrics, confusion_matrix = confusion_matrix)
 
                 # backward + optimize only if in training phase
                 if phase == 'train':
@@ -423,7 +431,7 @@ class Trainer:
             scheduler.step()
 
         # get epoch based metrics
-        self.pixel_acc, self.mIoU, self.mDice, self.class_iou, self.class_dice = self.get_metrics().values()
+        self.pixel_acc, self.mIoU, self.mDice, self.class_iou, self.class_dice, self.confusion_matrix = self.get_metrics().values()
         epoch_loss = self.loss.average
         epoch_accuracy = self.pixel_acc
         epoch_iou = self.mIoU
@@ -435,8 +443,15 @@ class Trainer:
         self.writer.add_scalar(f'{phase}-iou', epoch_iou, epoch)
         self.writer.add_scalar(f'{phase}-f1', epoch_f1, epoch)
 
+
         # log every ten epochs
         if epoch % 2 == 0:
+
+            print(self.confusion_matrix)
+            # log the confusion matrix
+            cm_fig = plot_confusion_matrix(self.confusion_matrix, self.class_names)
+            self.writer.add_figure(f'{phase}-confusion_matrix', cm_fig, epoch)
+            plt.close()
             
             # log the images with predictions from random batch
             num_of_samples = 12
@@ -475,7 +490,7 @@ class Trainer:
 
         with torch.set_grad_enabled(False):
             outputs = model(torch.from_numpy(images).cuda())
-            outputs = torch.nn.functional.interpolate(outputs, size = (self.patch_size, self.patch_size), mode='nearest')
+            outputs = F.interpolate(outputs, size = (self.patch_size, self.patch_size), mode='nearest')
             outputs = torch.nn.Softmax2d()(outputs)
             outputs = outputs.cpu().numpy()
 

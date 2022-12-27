@@ -135,3 +135,33 @@ def plot_image_prediction(images, masks, outputs, names, num_of_images, num_of_c
 
     return fig
 
+
+def plot_confusion_matrix(confusion_matrix, classes, title=None, cmap=plt.cm.Blues): 
+    if not title:
+        title = 'Confusion matrix'
+
+    # Print Confusion matrix
+    fig, ax = plt.subplots(figsize=(4, 4))
+    im = ax.imshow(confusion_matrix, interpolation='nearest', cmap=cmap)
+    ax.figure.colorbar(im, ax=ax)
+    # We want to show all ticks...
+    ax.set(xticks=np.arange(confusion_matrix.shape[1]),
+           yticks=np.arange(confusion_matrix.shape[0]),
+           xticklabels=classes, yticklabels=classes,
+           title=title,
+           ylabel='True label',
+           xlabel='Predicted label')
+
+    # Rotate the tick labels and set their alignment.
+    plt.setp(ax.get_xticklabels(), rotation=45, ha="right",
+             rotation_mode="anchor")
+    # Loop over data dimensions and create text annotations.
+    fmt = '.2f'
+    thresh = confusion_matrix.max() / 2.
+    for i in range(confusion_matrix.shape[0]):
+        for j in range(confusion_matrix.shape[1]):
+            ax.text(j, i, format(confusion_matrix[i, j], fmt),
+                    ha="center", color="white"
+                if confusion_matrix[i, j] > thresh else "black")
+    plt.tight_layout()
+    return fig

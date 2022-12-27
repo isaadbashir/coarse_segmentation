@@ -36,7 +36,7 @@ class ModelBuilder(nn.Module):
     def get_dilated_resnet(self):
         return dilated_resnet.ResNet50(BatchNorm=nn.BatchNorm2d,
                                         pretrained=True,
-                                        output_stride=self.mini_patch_size), 2048
+                                        output_stride=self.mini_patch_size), 2048#3904
 
     def get_normal_resnet(self):
         return normal_resnet.ResNet50(BatchNorm=nn.BatchNorm2d,

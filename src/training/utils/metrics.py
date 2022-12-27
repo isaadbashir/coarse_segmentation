@@ -49,6 +49,23 @@ def batch_pix_accuracy(output, target):
     
     return pixel_correct.cpu().numpy(), pixel_labeled.cpu().numpy()
 
+def batch_confusion_matrix(output, target, num_class):
+    _, predict = torch.max(output, 1)
+
+    predict = predict.int()
+    target = target.int()
+
+    predict = predict.flatten()
+    target = target.flatten()
+
+    y = num_class * target + predict
+    y = torch.bincount(y)
+    if len(y) < num_class * num_class:
+        y = torch.cat((y, torch.zeros(num_class * num_class - len(y), dtype=torch.long)))
+    y = y.reshape(num_class, num_class).cpu().numpy()
+    
+    return y
+
 
 def batch_intersection_union(output, target, num_class):
     _, predict = torch.max(output, 1)
@@ -71,4 +88,5 @@ def eval_metrics(output, target, num_classes, ignore_index = 255):
     target[target == ignore_index] = -1
     correct, labeled = batch_pix_accuracy(output.data, target)
     inter, union = batch_intersection_union(output.data, target, num_classes)
-    return [np.round(correct, 5), np.round(labeled, 5), np.round(inter, 5), np.round(union, 5)]
+    confusion_matrix = batch_confusion_matrix(output.data, target, num_classes)
+    return [np.round(correct, 5), np.round(labeled, 5), np.round(inter, 5), np.round(union, 5)], confusion_matrix

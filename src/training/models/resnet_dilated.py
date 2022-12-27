@@ -65,7 +65,7 @@ class Bottleneck(nn.Module):
 
         out = self.conv3(out)
         out = self.bn3(out)
-        out = self.eca(out)
+        # out = self.eca(out)
 
         if self.downsample is not None:
             residual = self.downsample(x)
@@ -146,27 +146,27 @@ class ResNet(nn.Module):
         x3 = self.layer3(x2)
         x4 = self.layer4(x3)
 
-        h,w = x4.size()[2:]
-        avgp = nn.AdaptiveAvgPool2d((h,w))
-        maxp = nn.AdaptiveMaxPool2d((h,w))
+        # h,w = x4.size()[2:]
+        # avgp = nn.AdaptiveAvgPool2d((h,w))
+        # maxp = nn.AdaptiveMaxPool2d((h,w))
 
-        avg_x = avgp(x)
-        avg_x1 = avgp(x1)
-        avg_x2 = avgp(x2)
-        avg_x3 = avgp(x3)
+        # avg_x = avgp(x)
+        # avg_x1 = avgp(x1)
+        # avg_x2 = avgp(x2)
+        # avg_x3 = avgp(x3)
 
-        avg_x4 = torch.cat((avg_x,avg_x1,avg_x2,avg_x3,x4), dim = 1)
+        # avg_x4 = torch.cat((avg_x,avg_x1,avg_x2,avg_x3,x4), dim = 1)
 
-        max_x = maxp(x)
-        max_x1 = maxp(x1)
-        max_x2 = maxp(x2)
-        max_x3 = maxp(x3)
+        # max_x = maxp(x)
+        # max_x1 = maxp(x1)
+        # max_x2 = maxp(x2)
+        # max_x3 = maxp(x3)
 
-        max_x4 = torch.cat((max_x,max_x1,max_x2,max_x3,x4), dim = 1)
+        # max_x4 = torch.cat((max_x,max_x1,max_x2,max_x3,x4), dim = 1)
 
         # x4 = torch.cat((avg_x4,max_x4), dim = 1)
 
-        return avg_x4, low_level_feat
+        return x4, low_level_feat
 
     def _init_weight(self):
         for m in self.modules():
@@ -225,7 +225,7 @@ def ResNet50(output_stride, BatchNorm, pretrained=True):
 
 if __name__ == "__main__":
     import torch
-
+    os.environ["CUDA_VISIBLE_DEVICES"] = '1'
     model = ResNet50(BatchNorm=nn.BatchNorm2d, pretrained=True, output_stride=16)
     # input = torch.rand(1, 3, 224, 224)
     # output, low_level_feat = model(input)
