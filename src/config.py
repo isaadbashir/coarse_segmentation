@@ -1,3 +1,5 @@
+import logging
+
 # global path  variables
 PIXELWISE_PATCHES_PATH = '/mnt/sda2/coarse_segmentation/data/patches/pixel_wise/'
 COARSEWISE_PATCHES_PATH = '/mnt/sda2/coarse_segmentation/data/patches/coarse_wise/'
@@ -20,3 +22,14 @@ KEY_MASK = 'omask'
 KEY_COARSE_MASK = 'cmask'
 # coarse mask of size as orignial mask
 KEY_COARSE_MASK_RESIZE = 'mask'
+
+# model names for usage
+NORMAL_RESNET_MODEL = 'resnet'
+DILATED_RESNET_MODEL = 'dilated_resnet'
+DILATED_MOBILENET_MODEL = 'dilated_mb_net'
+UNET_MODEL = 'unet'
+DEEPLAB_MODEL = 'deeplab'
+SEGFORMER_MODEL = 'segformer'
+
+# logger
+LOG_FORMATTER = logging.Formatter("%(asctime)s  %(name)s  %(levelname)s  %(message)s")

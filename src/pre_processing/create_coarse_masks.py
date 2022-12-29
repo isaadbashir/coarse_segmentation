@@ -4,8 +4,9 @@ import numpy as np
 from multiprocessing import Pool
 import matplotlib.pyplot as plt
 import pickle
-import config
-import utils
+import src.config as config
+import src.utils as utils
+import cv2
 
 def create_coarse_patches(path, pre_processing_fun = None):
 
@@ -13,7 +14,7 @@ def create_coarse_patches(path, pre_processing_fun = None):
     patch = np.load(path, allow_pickle=True)
 
     # seperate image and mask
-    image, mask = patch[:, :, :3], patch[:, :, 3]
+    image, mask = cv2.cvtColor(patch[:, :, :3], cv2.COLOR_BGR2RGB), patch[:, :, 3]
 
     # apply preprocessing function on the masks
     if pre_processing_fun is not None:
@@ -89,12 +90,12 @@ def create_coarse_patches(path, pre_processing_fun = None):
 def main():
 
     # get list of all folders i.e., train, valid, test etc
-    list_of_folders = os.listdir(os.path.join(config.PIXELWISE_PATCHES_PATH,config.PATCHES_MAGNIFICATION_LEVEL))
+    list_of_folders = os.listdir(os.path.join(config.PIXELWISE_PATCHES_PATH,config.PATCHES_MAGNIFICATION_LEVEL,f'1x1'))
 
     for split in list_of_folders:
 
         print(f'Starting the {split} folder .... ')
-        INPUT_PATH = os.path.join(config.PIXELWISE_PATCHES_PATH, config.PATCHES_MAGNIFICATION_LEVEL, split)
+        INPUT_PATH = os.path.join(config.PIXELWISE_PATCHES_PATH, config.PATCHES_MAGNIFICATION_LEVEL, f'1x1',split)
         list_of_patches = os.listdir(INPUT_PATH)
 
         mp = Pool(20)

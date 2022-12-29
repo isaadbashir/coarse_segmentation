@@ -6,11 +6,12 @@ import albumentations as album
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
-import torchvision.transforms as transforms
+import torch.nn.functional as F
+import torch.utils.data as data
 from albumentations.pytorch import ToTensorV2
 from torch.utils.data import Dataset as BaseDataset
-import config
-import utils
+import src.config as config
+import src.utils as utils
 import cv2
 
 
@@ -67,9 +68,9 @@ class DataReader(BaseDataset):
         image, mask = self.preprocess_for_train(image, mask)
 
         # convert mask from HW to CHW mask
-        mask = torch.nn.functional.one_hot(mask.to(torch.int64), num_classes=self.num_classes)
+        #mask = torch.nn.functional.one_hot(mask.to(torch.int64), num_classes=self.num_classes)
 
-        return image, mask, self.list_of_images[i].split('/')[-1].split('_')[0]
+        return image, mask.long(), self.list_of_images[i].split('/')[-1].split('_')[0]
 
     def __len__(self):
         return len(self.list_of_images)
@@ -104,11 +105,11 @@ if __name__ == '__main__':
                             target_size=target_size,
                             transformation=transform)
 
-    train_generator = torch.utils.data.DataLoader(data_reader, **params)
+    train_generator = data.DataLoader(data_reader, **params)
 
     X, Y, N = next(iter(train_generator))
     print(X.shape, Y.shape)
 
-    fig = utils.plot_image_prediction(X.cpu().numpy(), Y.numpy(), Y.numpy().transpose(0, 3, 1, 2), N, 5, 5)
+    fig = utils.plot_image_prediction(X.cpu().numpy(), Y.numpy(), F.one_hot(Y.to(torch.int64), num_classes=config.TNBC_NUMBER_OF_CLASSES).permute(0,3,1,2).numpy(), N, 5, 5)
 
     plt.show()

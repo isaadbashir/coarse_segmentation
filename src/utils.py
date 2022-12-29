@@ -1,5 +1,30 @@
 import numpy as np
 import matplotlib.pyplot as plt
+import logging
+import sys
+import src.config as config
+
+def get_console_handler():
+    console_handler = logging.StreamHandler(sys.stdout)
+    console_handler.setFormatter(config.LOG_FORMATTER)
+    return console_handler
+
+
+def get_file_handler(file_path):
+    file_handler = logging.FileHandler(file_path)
+    file_handler.setFormatter(config.LOG_FORMATTER)
+    return file_handler
+
+
+def get_logger(logger_name, file_path):
+    logger = logging.getLogger(logger_name)
+    logger.setLevel(logging.DEBUG)  # better to have too much log than not enough
+    logger.addHandler(get_console_handler())
+    logger.addHandler(get_file_handler(file_path))
+    # with this pattern, it's rarely necessary to propagate the error up to parent
+    logger.propagate = False
+    return logger
+
 
 # common functions used in the project
 def group_mask_tnbc_classes(mask):
@@ -7,6 +32,7 @@ def group_mask_tnbc_classes(mask):
     Groups the minor mask classes into major ones according to the info given in the paper
     :param mask:
     """
+    
     # tumor cluster
     mask[mask == 19] = 1
     mask[mask == 20] = 1
@@ -57,7 +83,7 @@ def plot_image_prediction(images, masks, outputs, names, num_of_images, num_of_c
     outputs = outputs.transpose(0, 2, 3, 1)
 
     pred_mask = create_mask(outputs)
-    masks = create_mask(masks)
+    # masks = create_mask(masks)
 
     fig, ax = plt.subplots(num_of_images, 4, figsize=(8, 24))
 
@@ -91,7 +117,7 @@ def plot_image_prediction(images, masks, outputs, names, num_of_images, num_of_c
 
         pred_mask_i_overlay = np.ma.masked_where(pred_mask_i == 0, pred_mask_i)
 
-        ax[i, 3].imshow(images[i, ...].astype('uint8'))
+        ax[i, 3].imshow(images[i, ...])
         ax[i, 3].imshow(pred_mask_i_overlay.astype('uint8'), interpolation='none', cmap='jet', alpha=0.5)
 
         ax[i, 0].set_ylabel(names[i], fontsize=6)
@@ -109,3 +135,33 @@ def plot_image_prediction(images, masks, outputs, names, num_of_images, num_of_c
 
     return fig
 
+
+def plot_confusion_matrix(confusion_matrix, classes, title=None, cmap=plt.cm.Blues): 
+    if not title:
+        title = 'Confusion matrix'
+
+    # Print Confusion matrix
+    fig, ax = plt.subplots(figsize=(4, 4))
+    im = ax.imshow(confusion_matrix, interpolation='nearest', cmap=cmap)
+    ax.figure.colorbar(im, ax=ax)
+    # We want to show all ticks...
+    ax.set(xticks=np.arange(confusion_matrix.shape[1]),
+           yticks=np.arange(confusion_matrix.shape[0]),
+           xticklabels=classes, yticklabels=classes,
+           title=title,
+           ylabel='True label',
+           xlabel='Predicted label')
+
+    # Rotate the tick labels and set their alignment.
+    plt.setp(ax.get_xticklabels(), rotation=45, ha="right",
+             rotation_mode="anchor")
+    # Loop over data dimensions and create text annotations.
+    fmt = '.2f'
+    thresh = confusion_matrix.max() / 2.
+    for i in range(confusion_matrix.shape[0]):
+        for j in range(confusion_matrix.shape[1]):
+            ax.text(j, i, format(confusion_matrix[i, j], fmt),
+                    ha="center", color="white"
+                if confusion_matrix[i, j] > thresh else "black")
+    plt.tight_layout()
+    return fig
