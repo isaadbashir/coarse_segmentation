@@ -233,6 +233,7 @@ class Trainer:
 
         self.logger.info(f'STEP:4 - Loading losses')
         loss = CE_loss
+        # loss = DiceLoss(self.num_classes)
         self.logger.info(f'STEP:4 - Loading losses successfully')
 
         # progress bar outer for epoch

@@ -25,7 +25,7 @@ class ModelBuilder(nn.Module):
         elif self.model_name == config.DILATED_RESNET_MODEL:
             return self.get_dilated_resnet()
         elif self.model_name == config.DILATED_MOBILENET_MODEL:
-            return self.get_normal_mobilenet
+            return self.get_normal_mobilenet()
         elif self.model_name == config.UNET_MODEL:
             pass
         elif self.model_name == config.DEEPLAB_MODEL:
