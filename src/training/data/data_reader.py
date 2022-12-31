@@ -57,12 +57,11 @@ class DataReader(BaseDataset):
 
     def __getitem__(self, i):
 
-        # read data which is in 4D format where first 3 are image and 4th is mask
-        with open(self.list_of_images[i], 'rb') as f:
-            image_data = pickle.load(f)
-      
-        image = image_data.get(config.KEY_IMAGE)
-        mask = image_data.get(config.KEY_COARSE_MASK_RESIZE)
+        # read data which is in ND format where first 3 are image and 4th is mask
+        image_data = np.load(self.list_of_images[i])
+        idx_num = random.randint(0, 13)
+        image = image_data[f'arr_{idx_num}'] # index of the augmetned image
+        mask = image_data['mask'] # index of the mask
 
         # apply transformations
         image, mask = self.preprocess_for_train(image, mask)
@@ -78,7 +77,7 @@ class DataReader(BaseDataset):
 
 if __name__ == '__main__':
 
-    data_dir = '/mnt/sda2/coarse_segmentation/data/patches/coarse_wise/20x/16x16/train/'
+    data_dir = '/mnt/sda2/coarse_segmentation/data/patches/augmented_coarse_wise/20x/16x16/train/'
     target_size = 512
    
     transform = album.Compose([
