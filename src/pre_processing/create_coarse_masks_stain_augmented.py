@@ -94,12 +94,6 @@ def create_coarse_patches(path, pre_processing_fun = None):
         augmented_image = augmentor2.pop().astype(np.uint8)
         list_of_augmented_images.append(augmented_image)
 
-
-    # due to the variable shape of the coarse mask w need to store it as dict
-    small_combo = {config.KEY_IMAGE: list_of_augmented_images,
-                    config.KEY_COARSE_MASK_RESIZE: mask,
-                    config.KEY_MASK: patch[:, :, 3] if pre_processing_fun is None else pre_processing_fun(patch[:, :, 3])}
-
     # exrtact the meta data for saving files
     patch_name = path.split('/')[-1]
     patch_split = path.split('/')[-2]
@@ -125,18 +119,9 @@ def create_coarse_patches(path, pre_processing_fun = None):
     if not os.path.exists(OUTPUT_PATH):
         os.makedirs(OUTPUT_PATH, exist_ok=True)
 
-    # with open(f'{OUTPUT_PATH}/{patch_name[:-4]}.pkl', 'wb') as f:
-    #     pickle.dump(small_combo, f, pickle.HIGHEST_PROTOCOL)
-
     original_mask = patch[:, :, 3] if pre_processing_fun is None else pre_processing_fun(patch[:, :, 3])
-    original_mask = np.repeat(original_mask[..., np.newaxis], 3, axis=2)
 
-    mask = np.repeat(mask[..., np.newaxis], 3, axis=2)
-
-    list_of_augmented_images.append(mask)
-    list_of_augmented_images.append(original_mask)
-
-    np.save(f'{OUTPUT_PATH}/{patch_name[:-4]}.npy', list_of_augmented_images)
+    np.savez(f'{OUTPUT_PATH}/{patch_name[:-4]}.npz', *list_of_augmented_images, mask = mask, original_mask = original_mask)
 
 
 
@@ -152,7 +137,7 @@ def main():
         INPUT_PATH = os.path.join(config.PIXELWISE_PATCHES_PATH, config.PATCHES_MAGNIFICATION_LEVEL, f'1x1',split)
         list_of_patches = os.listdir(INPUT_PATH)
 
-        mp = Pool(5)
+        mp = Pool(20)
         mp.map(partial(create_coarse_patches, pre_processing_fun = utils.group_mask_tnbc_classes),
                         [os.path.join(INPUT_PATH,i) for i in list_of_patches])
         # create_coarse_patches(os.path.join(INPUT_PATH, list_of_patches[0]), utils.group_mask_tnbc_classes)
