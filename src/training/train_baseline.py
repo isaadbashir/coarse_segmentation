@@ -11,13 +11,14 @@ from albumentations.pytorch import ToTensorV2
 from matplotlib import pyplot as plt
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
-from training.data.data_reader import DataReader
+from .data.data_reader import DataReader
 import config
 from training.utils.losses import *
 from training.utils.metrics import *
 from training.models.model_builder import ModelBuilder
 from utils import *
 from time import time
+
 
 class Trainer:
     """
@@ -111,7 +112,7 @@ class Trainer:
         # create the data loader params
         params = {'batch_size': self.batch_size,
                   'shuffle': False,
-                  'num_workers': 4,
+                  'num_workers': 0,
                   'pin_memory': False}
         self.logger.info(f'STEP:2 - Creating params for data loaders {params}')
         
@@ -227,13 +228,12 @@ class Trainer:
         self.logger.info(f'STEP:2 - Data generators loaded successfully')
 
         self.logger.info(f'STEP:3 - Loading optimizers')
-        optim = self.get_optim(model, 'adam', 0.0001)
-        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optim, T_max=10, eta_min=0.00001)
+        optim = self.get_optim(model, 'adam', 0.00001)
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optim, T_max=10, eta_min=0.01)
         self.logger.info(f'STEP:3 - Loaded \n{optim} successfully')
 
         self.logger.info(f'STEP:4 - Loading losses')
-        loss = CE_loss
-        # loss = DiceLoss(self.num_classes)
+        loss = [CE_loss,DiceLoss()]
         self.logger.info(f'STEP:4 - Loading losses successfully')
 
         # progress bar outer for epoch
@@ -393,7 +393,7 @@ class Trainer:
                 output = F.interpolate(output, size = (self.patch_size, self.patch_size), mode='nearest')
 
                 # calculate the loss
-                loss = criterion(output, masks, temperature = 1)
+                loss = criterion[1](output, masks) #0.5*criterion[0](output, masks) + 
 
                 # update the loss 
                 self.update_loss(loss)

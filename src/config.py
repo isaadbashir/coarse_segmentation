@@ -30,6 +30,10 @@ DILATED_MOBILENET_MODEL = 'dilated_mb_net'
 UNET_MODEL = 'unet'
 DEEPLAB_MODEL = 'deeplab'
 SEGFORMER_MODEL = 'segformer'
+NORMAL_EFFICIENT_NET_B3 = 'effb3'
+NORMAL_EFFICIENT_NET_B2 = 'effb2'
+NORMAL_EFFICIENT_NET_B1 = 'effb1'
+NORMAL_EFFICIENT_NET_B0 = 'effb0'
 
 # logger
 LOG_FORMATTER = logging.Formatter("%(asctime)s  %(name)s  %(levelname)s  %(message)s")
