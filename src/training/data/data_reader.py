@@ -59,8 +59,8 @@ class DataReader(BaseDataset):
 
         # read data which is in ND format where first 3 are image and 4th is mask
         image_data = np.load(self.list_of_images[i])
-        # idx_num = random.randint(0, 1)
-        idx_num = 1
+        idx_num = random.randint(0, 1)
+        # idx_num = 1
         image = image_data[f'arr_{idx_num}'] # index of the augmetned image
         mask = image_data['mask'] # index of the mask
 

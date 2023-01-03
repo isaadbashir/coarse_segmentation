@@ -69,7 +69,7 @@ class Trainer:
         :return: model
         '''
 
-        model = ModelBuilder(self.model_name, self.mini_patch_size, self.num_classes)
+        model = ModelBuilder(self.model_name, self.mini_patch_size, self.patch_size, self.num_classes)
      
         # put model to the GPU
         model.relocate()
@@ -393,7 +393,7 @@ class Trainer:
                 output = F.interpolate(output, size = (self.patch_size, self.patch_size), mode='nearest')
 
                 # calculate the loss
-                loss = criterion[1](output, masks) #0.5*criterion[0](output, masks) + 
+                loss = criterion[0](output, masks) #0.5*criterion[0](output, masks) + 
 
                 # update the loss 
                 self.update_loss(loss)
