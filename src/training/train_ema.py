@@ -11,7 +11,7 @@ from albumentations.pytorch import ToTensorV2
 from matplotlib import pyplot as plt
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
-from .data.data_reader import DataReader
+from .data.data_reader_ema import DataReader
 import config
 from training.utils.losses import *
 from training.utils.metrics import *
@@ -62,13 +62,13 @@ class Trainer:
         # set the gpu for usage
         torch.cuda.set_device(self.gpu_id)
 
-    def load_model(self):
+    def load_model(self, is_ema=False):
         '''
         load the coarse semgentation models for training the baseline
         :return: model
         '''
 
-        model = ModelBuilder(self.model_name, self.mini_patch_size, self.patch_size, self.num_classes)
+        model = ModelBuilder(self.model_name, self.mini_patch_size, self.patch_size, self.num_classes, is_ema = is_ema)
      
         # put model to the GPU
         model.relocate()
@@ -96,7 +96,7 @@ class Trainer:
                     std=[1.0, 1.0, 1.0],
                     max_pixel_value=255.0),
             ToTensorV2()
-        ])
+        ],additional_targets={'image0': 'image'})
 
         # create the test augmentation
         test_transform = album.Compose([
@@ -106,7 +106,7 @@ class Trainer:
                     std=[1.0, 1.0, 1.0],
                     max_pixel_value=255.0),
             ToTensorV2()
-        ])
+        ], additional_targets={'image0': 'image'})
 
         # create the data loader params
         params = {'batch_size': self.batch_size,
@@ -218,7 +218,8 @@ class Trainer:
 
         # load the model
         self.logger.info(f'STEP:1 - Loading model {self.model_name}')
-        model = self.load_model()
+        model = self.load_model(is_ema=False)
+        ema_model = self.load_model(is_ema=True)
         self.logger.info(f'STEP:1 - Model {self.model_name} loaded successfully')
 
         # load the data generators
@@ -227,12 +228,12 @@ class Trainer:
         self.logger.info(f'STEP:2 - Data generators loaded successfully')
 
         self.logger.info(f'STEP:3 - Loading optimizers')
-        optim = self.get_optim(model, 'adam', 0.00001)
-        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optim, T_max=10, eta_min=0.01)
+        optim = self.get_optim(model, 'adam', 0.0001)
+        scheduler = torch.optim.lr_scheduler.StepLR(optim, step_size=15, gamma=0.1)
         self.logger.info(f'STEP:3 - Loaded \n{optim} successfully')
 
         self.logger.info(f'STEP:4 - Loading losses')
-        loss = [CE_loss,DiceLoss()]
+        loss = [CE_loss, mse_loss, kl_loss, SCELoss(alpha=6, beta=1.0, num_classes=self.num_classes)]
         self.logger.info(f'STEP:4 - Loading losses successfully')
 
         # progress bar outer for epoch
@@ -254,9 +255,10 @@ class Trainer:
             phase = 'train'
 
             # run the train step
-            epoch_loss, epoch_accuracy, epoch_iou, epoch_f1, epoch_class_iou, epoch_class_dice = self.model_step(epoch,
+            epoch_loss, epoch_accuracy, epoch_iou, epoch_f1, epoch_class_iou, epoch_class_dice = self.model_step_ema(epoch,
                                                                                 phase, 
-                                                                                model, 
+                                                                                model,
+                                                                                ema_model, 
                                                                                 train_generator, 
                                                                                 optim, 
                                                                                 loss, 
@@ -269,7 +271,7 @@ class Trainer:
                 best_model = copy.deepcopy(model)
                 best_epoch = epoch
 
-            train_string = f'Main Loop  - {phase}: Epoch:{epoch}' \
+            train_string = f'Main Loop  - {phase}: Epoch:{epoch} | LR: {scheduler.optimizer.param_groups[0]["lr"]}'  \
                             f' | Loss:{epoch_loss:.4f}' \
                             f' | IOU:{epoch_iou:.4f}' \
                             f' | F1:{epoch_f1:.4f}' \
@@ -283,16 +285,17 @@ class Trainer:
             phase = 'test'
 
             # run the test step
-            epoch_loss, epoch_accuracy, epoch_iou, epoch_f1, epoch_class_iou, epoch_class_dice = self.model_step(epoch, 
+            epoch_loss, epoch_accuracy, epoch_iou, epoch_f1, epoch_class_iou, epoch_class_dice = self.model_step_ema(epoch, 
                                                                                 phase,
-                                                                                model, 
+                                                                                model,
+                                                                                ema_model, 
                                                                                 test_generator, 
                                                                                 optim, 
                                                                                 loss, 
                                                                                 scheduler, 
                                                                                 pbar_test)
 
-            test_string = f'Main Loop  - {phase}: Epoch:{epoch}' \
+            test_string = f'Main Loop  - {phase}: Epoch:{epoch} | LR: {scheduler.optimizer.param_groups[0]["lr"]} ' \
                             f' | Loss:{epoch_loss:.4f}' \
                             f' | IOU:{epoch_iou:.4f}' \
                             f' | F1:{epoch_f1:.4f}' \
@@ -370,7 +373,7 @@ class Trainer:
         all_f1_scores = []
 
         # load the batch
-        for images, masks, _ in generator:
+        for images, _, masks, _ in generator:
 
             # move the batch to cuda device as the model is on cuda
             images = images.to(self.device)
@@ -489,7 +492,164 @@ class Trainer:
 
         return epoch_loss, epoch_accuracy, epoch_iou, epoch_f1, epoch_class_iou, epoch_class_dice
 
-    def generate_predictions_figure(self, epoch, generator, model, num_of_samples, title, index):
+    def model_step_ema(self, epoch, phase, model, ema_model, generator, optimizer, criterion, scheduler, pbar):
+        """
+        Runs the one epoch with train or test phase and avoid the duplication of the same code
+        :param epoch:
+        :param phase:
+        :param model:
+        :param ema_model:
+        :param generator:
+        :param optimizer:
+        :param loss:
+        :return:
+        """
+
+        # reset the and initialize the metrics again
+        self.initialize()
+
+        # check the training phase 
+        if phase == 'train':
+            # set the model in training mode
+            model.train()
+            ema_model.train()
+        else:
+            model.eval()
+            ema_model.eval()
+
+        all_f1_scores = []
+
+        # load the batch
+        for images, aug_images, masks, _ in generator:
+
+            # move the batch to cuda device as the model is on cuda
+            images = images.to(self.device)
+            aug_images = aug_images.to(self.device)
+            masks = masks.to(self.device)
+
+            # permute the masks to match the output
+            # masks = masks.permute(0, 3, 1, 2)
+
+            # reset the optimizer gradients to zero for next epoch calculations
+            optimizer.zero_grad()
+
+            # for safe check make sure gradients are enabled by working in enabled scope
+            with torch.set_grad_enabled(phase == 'train'):
+
+                # pass the images through the model and get output
+                output, feats = model(images)
+                output_ema, feats_ema = ema_model(aug_images)
+
+                # resize the output to 512 for consistency
+                output = F.interpolate(output, size = (self.patch_size, self.patch_size), mode='nearest')
+                output_ema = F.interpolate(output_ema, size = (self.patch_size, self.patch_size), mode='nearest')
+
+                # calculate the losses
+                loss_model = criterion[0](output, masks)
+                ema_loss = criterion[0](output_ema, masks) 
+                loss_feat = criterion[1](feats, feats_ema)
+
+                # calculate the total loss
+                loss = 0.5*(loss_model + ema_loss) + loss_feat
+
+                # update the loss 
+                self.update_loss(loss)
+
+                # calculate the metrics
+                metrics, confusion_matrix = eval_metrics(output, masks, self.num_classes)
+
+                # udpate the metrics
+                self.update_metrics(*metrics, confusion_matrix = confusion_matrix)
+
+                # backward + optimize only if in training phase
+                if phase == 'train':
+                    # propagate the losses
+                    loss.backward()
+                    optimizer.step()
+                    ema_model.update_ema_variables(model, 0.80, epoch)
+
+                # calculate the batch acc and iou
+                pixel_acc = 1.0 * metrics[0] / (np.spacing(1) + metrics[1])
+                IoU = 1.0 * metrics[2] / (np.spacing(1) + metrics[3])
+                dice = (2 * IoU) / (IoU + 1)
+
+                mIoU = IoU.mean()
+                mDice = dice.mean()
+                
+                class_iou = dict(zip(self.class_names, np.round(IoU, 2))),
+                class_dice = dict(zip(self.class_names, np.round(dice, 2)))
+
+
+                # calculate the individual dice only
+                for i_idx, pred in enumerate(output):
+                    i_metric, _ = metrics, confusion_matrix = eval_metrics(pred[None,:], masks[i_idx][None,:], self.num_classes)
+                    IoU = 1.0 * i_metric[2] / (np.spacing(1) + i_metric[3])
+                    dice = (2 * IoU) / (IoU + 1)
+                    all_f1_scores.append(dice.mean())
+
+                
+                pbar.set_description(f'Inner Loop - {phase:<5}: Epoch:{epoch} | LR: {scheduler.optimizer.param_groups[0]["lr"]} | Loss:{loss.item():.4f}'
+                                     f' | mIOU:{mIoU:.2f}'
+                                     f' | mDice:{mDice:.2f}'
+                                     f' | Accuracy:{pixel_acc:.2f}'
+                                     f' | IOU:{class_iou}'
+                                     f' | Dice:{class_dice}')
+                # update the counter
+                pbar.update(1)
+
+        # reset the counter to be used again
+        pbar.reset()
+
+        if phase == 'train':
+            scheduler.step()
+
+        # get epoch based metrics
+        self.pixel_acc, self.mIoU, self.mDice, self.class_iou, self.class_dice, self.confusion_matrix = self.get_metrics().values()
+        epoch_loss = self.loss.average
+        epoch_accuracy = self.pixel_acc
+        epoch_iou = self.mIoU
+        epoch_f1 = self.mDice
+        epoch_class_iou = self.class_iou
+        epoch_class_dice = self.class_dice
+
+        # log the scaler values here to tensorboard
+        self.writer.add_scalar(f'{phase}-loss', epoch_loss, epoch)
+        self.writer.add_scalar(f'{phase}-accuracy', epoch_accuracy, epoch)
+        self.writer.add_scalar(f'{phase}-iou', epoch_iou, epoch)
+        self.writer.add_scalar(f'{phase}-f1', epoch_f1, epoch)
+
+
+        # log every ten epochs
+        if epoch % 2 == 0:
+
+            # log the confusion matrix
+            cm_fig = plot_confusion_matrix(self.confusion_matrix, self.class_names)
+            self.writer.add_figure(f'{phase}-confusion_matrix', cm_fig, epoch)
+            plt.close()
+            
+            # log the images with predictions from random batch
+            num_of_samples = 12
+        
+            # Get a random sample
+            pbar.set_description(f'Generating Random performing predictions ...')
+            random.seed(None)
+            random_index = random.sample(range(len(generator.dataset)), k=num_of_samples)
+            self.generate_predictions_figure(epoch, generator, model, num_of_samples, f'{phase}-random', random_index, np.array(all_f1_scores)[random_index])
+
+            # sort the array
+            sorted_indices = np.argsort(all_f1_scores)
+        
+            # get the top instances
+            pbar.set_description(f'Generating Top performing predictions ...')
+            self.generate_predictions_figure(epoch, generator, model, num_of_samples, f'{phase}-top', sorted_indices[-num_of_samples:], np.array(all_f1_scores)[sorted_indices[-num_of_samples:]])
+        
+            # get the worst instances
+            pbar.set_description(f'Generating Worst performing predictions ...')
+            self.generate_predictions_figure(epoch, generator, model, num_of_samples, f'{phase}-worst', sorted_indices[:num_of_samples], np.array(all_f1_scores)[sorted_indices[:num_of_samples]])
+
+        return epoch_loss, epoch_accuracy, epoch_iou, epoch_f1, epoch_class_iou, epoch_class_dice
+
+    def generate_predictions_figure(self, epoch, generator, model, num_of_samples, title, index, f1_scores):
         """
         Generates the figure with predictions and plots in the tensorboard
 
@@ -504,18 +664,18 @@ class Trainer:
         masks = []
         names = []
 
-        for idx in index:
-            image, mask, name = generator.dataset[idx]
+        for i, idx in enumerate(index):
+            image, _, mask, name = generator.dataset[idx]
             images.append(image.numpy())
             masks.append(mask.numpy())
-            names.append(name)
+            names.append(f'{f1_scores[i]}:.2f | {name}')
 
         images = np.array(images)
         masks = np.array(masks)
         names = np.array(names)
 
         with torch.set_grad_enabled(False):
-            outputs = model(torch.from_numpy(images).cuda())
+            outputs, _ = model(torch.from_numpy(images).cuda())
             outputs = F.interpolate(outputs, size = (self.patch_size, self.patch_size), mode='nearest')
             outputs = torch.nn.Softmax2d()(outputs)
             outputs = outputs.cpu().numpy()

@@ -13,7 +13,7 @@ from torch.utils.data import Dataset as BaseDataset
 import src.config as config
 import src.utils as utils
 import cv2
-
+import time
 
 class DataReader(BaseDataset):
 
@@ -30,8 +30,8 @@ class DataReader(BaseDataset):
                         mean=[0.0, 0.0, 0.0],
                         std=[1.0, 1.0, 1.0],
                         max_pixel_value=255.0),
-                ToTensorV2(),  
-            ])
+                ToTensorV2(),
+            ], additional_targets={'image0': 'image'})
             
         else:
             self.transform = transformation
@@ -42,7 +42,7 @@ class DataReader(BaseDataset):
         # shuffle the list of images for randomness
         random.shuffle(self.list_of_images)
 
-    def preprocess_for_train(self, image, mask):
+    def preprocess_for_train(self, image, aug_image, mask):
         '''
         preprocess training images with albumenations
         :param image:
@@ -51,25 +51,28 @@ class DataReader(BaseDataset):
         '''
 
         random.seed(11)
-        augmented = self.transform(image=image, mask = mask)
+        augmented = self.transform(image=image, mask = mask, image0=aug_image)
 
-        return augmented['image'], augmented['mask']
+        return augmented['image'], augmented['image0'], augmented['mask']
 
     def __getitem__(self, i):
 
+        random.seed(time.time())
         # read data which is in ND format where first 3 are image and 4th is mask
         image_data = np.load(self.list_of_images[i])
         idx_num = random.randint(0, 13)
-        image = image_data[f'arr_{idx_num}'] # index of the augmetned image
+        idx_num = 0 if idx_num == 1 else idx_num
+        image = image_data[f'arr_1'] # index of the stained image
         mask = image_data['mask'] # index of the mask
-
+        aug_image = image_data[f'arr_{idx_num}'] # index of the augmetned image
+        # print(idx_num)
         # apply transformations
-        image, mask = self.preprocess_for_train(image, mask)
+        image, aug_image, mask = self.preprocess_for_train(image, aug_image, mask)
 
         # convert mask from HW to CHW mask
         #mask = torch.nn.functional.one_hot(mask.to(torch.int64), num_classes=self.num_classes)
 
-        return image, mask.long(), self.list_of_images[i].split('/')[-1].split('_')[0]
+        return image, aug_image, mask.long(), self.list_of_images[i].split('/')[-1].split('_')[0]
 
     def __len__(self):
         return len(self.list_of_images)
@@ -92,7 +95,7 @@ if __name__ == '__main__':
                 std=[1.0, 1.0, 1.0],
                 max_pixel_value=255.0),
         ToTensorV2()
-    ])
+    ],additional_targets={'image0': 'image'})
 
     params = {'batch_size': 12,
               'shuffle': False,
@@ -106,9 +109,10 @@ if __name__ == '__main__':
 
     train_generator = data.DataLoader(data_reader, **params)
 
-    X, Y, N = next(iter(train_generator))
+    X, AX, Y, N = next(iter(train_generator))
     print(X.shape, Y.shape)
 
-    fig = utils.plot_image_prediction(X.cpu().numpy(), Y.numpy(), F.one_hot(Y.to(torch.int64), num_classes=config.TNBC_NUMBER_OF_CLASSES).permute(0,3,1,2).numpy(), N, 5, 5)
+    # fig = utils.plot_image_prediction(X.cpu().numpy(), Y.numpy(), F.one_hot(Y.to(torch.int64), num_classes=config.TNBC_NUMBER_OF_CLASSES).permute(0,3,1,2).numpy(), N, 5, 5)
+    fig = utils.plot_image_prediction(X.cpu().numpy(), Y.numpy(), AX.cpu().numpy(), N, 12, 5)
 
     plt.show()

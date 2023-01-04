@@ -1,9 +1,9 @@
-from training.train_baseline import Trainer
+from training.train_ema import Trainer
 import argparse
 import config
 import os
 
-os.environ["CUDA_VISIBLE_DEVICES"] = '0,1'
+os.environ["CUDA_VISIBLE_DEVICES"] = '0'
 
 def main(args):
 
@@ -29,20 +29,20 @@ if __name__ == '__main__':
             description="Baseline trainer for Coarse Segmentation",
             formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
-    MODEL = config.UNET_MODEL
+    MODEL = config.DILATED_RESNET_MODEL
     DATA_PATH = '/mnt/sda2/coarse_segmentation/data/patches/augmented_coarse_wise/'
     INPUT_SIZE = 512
     MINI_PATCH_SIZE = 16
     NUM_CLASSES = config.TNBC_NUMBER_OF_CLASSES
     INPUT_MAGNIFICATION = config.PATCHES_MAGNIFICATION_LEVEL
-    BATCH_SIZE = 64
+    BATCH_SIZE = 16
     NUM_EPOCHS = 100
     DATA_NAME = 'TNBC'
     GPU = 0
     OUTPUT_PATH = '/mnt/sda2/coarse_segmentation/model_output/'
     CLASS_NAMES = ['BG', 'Tumor','Stroma','Inflam', 'Dead']
 
-    EXPERIMENT_NO = f'd{DATA_NAME}_p{INPUT_SIZE}_z{INPUT_MAGNIFICATION}_c{NUM_CLASSES}_mp{MINI_PATCH_SIZE}_m{MODEL}_RandAugCE'
+    EXPERIMENT_NO = f'd{DATA_NAME}_p{INPUT_SIZE}_z{INPUT_MAGNIFICATION}_c{NUM_CLASSES}_mp{MINI_PATCH_SIZE}_m{MODEL}_EMAStainNormSCE'
 
     parser.add_argument("--data_path", default=DATA_PATH, help="Path to data folder location")
     parser.add_argument("--model", default=MODEL, help="Model name where there are following models: unet, deeplab, segnet, fcn etc. by default its unet")
@@ -60,5 +60,3 @@ if __name__ == '__main__':
     args = vars(parser.parse_args())
 
     main(args)
-
-    

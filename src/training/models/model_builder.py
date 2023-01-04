@@ -9,7 +9,7 @@ import training.models.unext as unext
 
 class ModelBuilder(nn.Module):
 
-    def __init__(self, model_name, mini_patch_size, input_size,  num_classes) -> None:
+    def __init__(self, model_name, mini_patch_size, input_size,  num_classes, is_ema = False) -> None:
         super(ModelBuilder, self).__init__()
 
         self.model_name = model_name
@@ -22,6 +22,20 @@ class ModelBuilder(nn.Module):
                                         nn.BatchNorm2d(self.out_channels//2),
                                         nn.ReLU(),
                                         nn.Conv2d(self.out_channels//2, self.num_classes, kernel_size=1, stride=1))
+
+        if is_ema:
+            for param in self.encoder.parameters():
+                param.detach_()
+            for param in self.classifier.parameters():
+                param.detach_()
+    
+    def update_ema_variables(self, model, alpha, global_step):
+        alpha = min(1 - 1 / (global_step + 1), alpha)
+        for ema_param, param in zip(self.encoder.parameters(), model.encoder.parameters()):
+            ema_param.data.mul_(alpha).add_( param.data, alpha= 1 - alpha)
+        for ema_param, param in zip(self.classifier.parameters(), model.classifier.parameters()):
+            ema_param.data.mul_(alpha).add_( param.data, alpha= 1 - alpha)
+
 
     def get_model(self):
 
@@ -118,8 +132,8 @@ class ModelBuilder(nn.Module):
 
     def forward(self, x):
         enc_out,_ = self.encoder(x)
-        # output = self.classifier(enc_out)
+        output = self.classifier(enc_out)
 
-        return enc_out
+        return output, enc_out
 
     
