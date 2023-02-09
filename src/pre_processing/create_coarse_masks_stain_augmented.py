@@ -25,12 +25,12 @@ def create_coarse_patches(path, pre_processing_fun = None):
     else:
         image, mask = cv2.cvtColor(patch[:, :, :3], cv2.COLOR_BGR2RGB), patch[:, :, 3]
 
-    plt.imshow(mask)
-    plt.show()
+    pixel_mask = np.copy(mask)
 
     # apply preprocessing function on the masks
     if pre_processing_fun is not None:
         mask = pre_processing_fun(mask)
+        pixel_mask = pre_processing_fun(pixel_mask)
 
     # ori_mask = np.copy(mask)
     output_size = mask.shape[0]//config.COARSE_FILTER_SIZE
@@ -66,7 +66,7 @@ def create_coarse_patches(path, pre_processing_fun = None):
 
     # normalize the image
     target = staintools.read_image(PATH_TO_REF_IMAGE)
-    normalizer = staintools.StainNormalizer('macenko')
+    normalizer = staintools.StainNormalizer('vahadane')
     normalizer.fit(target)
     normalized_image = normalizer.transform(image)
 
@@ -75,27 +75,27 @@ def create_coarse_patches(path, pre_processing_fun = None):
     list_of_augmented_images.append(image)
     list_of_augmented_images.append(normalized_image)
     
-    augmentor1 = staintools.StainAugmentor(method='vahadane', sigma1=0.2, sigma2=0.2)
-    augmentor1.fit(image)
-    for i in range(3):
-        augmented_image = augmentor1.pop().astype(np.uint8)
-        list_of_augmented_images.append(augmented_image)
+    # augmentor1 = staintools.StainAugmentor(method='vahadane', sigma1=0.2, sigma2=0.2)
+    # augmentor1.fit(image)
+    # for i in range(3):
+    #     augmented_image = augmentor1.pop().astype(np.uint8)
+    #     list_of_augmented_images.append(augmented_image)
 
-    augmentor1.fit(normalized_image)
-    for i in range(3):
-        augmented_image = augmentor1.pop().astype(np.uint8)
-        list_of_augmented_images.append(augmented_image)
+    # augmentor1.fit(normalized_image)
+    # for i in range(3):
+    #     augmented_image = augmentor1.pop().astype(np.uint8)
+    #     list_of_augmented_images.append(augmented_image)
 
-    augmentor2 = staintools.StainAugmentor(method='macenko', sigma1=0.2, sigma2=0.2)
-    augmentor2.fit(image)
-    for i in range(3):
-        augmented_image = augmentor2.pop().astype(np.uint8)
-        list_of_augmented_images.append(augmented_image)
+    # augmentor2 = staintools.StainAugmentor(method='macenko', sigma1=0.2, sigma2=0.2)
+    # augmentor2.fit(image)
+    # for i in range(3):
+    #     augmented_image = augmentor2.pop().astype(np.uint8)
+    #     list_of_augmented_images.append(augmented_image)
 
-    augmentor2.fit(normalized_image)
-    for i in range(3):
-        augmented_image = augmentor2.pop().astype(np.uint8)
-        list_of_augmented_images.append(augmented_image)
+    # augmentor2.fit(normalized_image)
+    # for i in range(3):
+    #     augmented_image = augmentor2.pop().astype(np.uint8)
+    #     list_of_augmented_images.append(augmented_image)
 
     # exrtact the meta data for saving files
     patch_name = path.split('/')[-1]
@@ -107,24 +107,28 @@ def create_coarse_patches(path, pre_processing_fun = None):
                                 f'{config.COARSE_FILTER_SIZE}x{config.COARSE_FILTER_SIZE}',
                                 patch_split)
 
-    plt.subplot(1,3,1)
-    plt.imshow(image)
+    # plt.subplot(1,3,1)
+    # plt.imshow(image)
     
-    plt.subplot(1,3,2)
-    plt.imshow(coarse_mask)
+    # plt.subplot(1,3,2)
+    # plt.imshow(coarse_mask)
     
-    plt.subplot(1,3,3)
-    plt.imshow(mask)
+    # plt.subplot(1,3,3)
+    # plt.imshow(mask)
     
-    plt.show()
+    # plt.show()
 
     # create the directories needed
-    # if not os.path.exists(OUTPUT_PATH):
-        # os.makedirs(OUTPUT_PATH, exist_ok=True)
+    if not os.path.exists(OUTPUT_PATH):
+        os.makedirs(OUTPUT_PATH, exist_ok=True)
 
-    # original_mask = patch[:, :, 3] if pre_processing_fun is None else pre_processing_fun(patch[:, :, 3])
+    original_mask = patch[:, :, 3] if pre_processing_fun is None else pre_processing_fun(patch[:, :, 3])
 
-    # np.savez(f'{OUTPUT_PATH}/{patch_name[:-4]}.npz', *list_of_augmented_images, mask = mask, original_mask = original_mask)
+    np.savez(f'{OUTPUT_PATH}/{patch_name[:-4]}.npz',
+            *list_of_augmented_images, 
+            mask = mask, 
+            original_mask = original_mask,
+            pixel_mask = pixel_mask)
 
 
 
@@ -140,11 +144,11 @@ def main():
         INPUT_PATH = os.path.join(config.PIXELWISE_PATCHES_PATH, config.PATCHES_MAGNIFICATION_LEVEL, f'1x1',split)
         list_of_patches = os.listdir(INPUT_PATH)
 
-        # mp = Pool(20)
-        # mp.map(partial(create_coarse_patches, pre_processing_fun = utils.group_mask_tnbc_classes),
-                        # [os.path.join(INPUT_PATH,i) for i in list_of_patches])
-        for i in range(10):
-            create_coarse_patches(os.path.join(INPUT_PATH, list_of_patches[i]), None)
+        mp = Pool(20)
+        mp.map(partial(create_coarse_patches, pre_processing_fun = utils.group_mask_tnbc_classes),
+                        [os.path.join(INPUT_PATH,i) for i in list_of_patches])
+        # for i in range(10):
+        #     create_coarse_patches(os.path.join(INPUT_PATH, list_of_patches[i]), None)
 
 
 if __name__ == '__main__':

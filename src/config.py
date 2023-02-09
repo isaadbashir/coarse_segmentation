@@ -11,7 +11,7 @@ TNBC_NUMBER_OF_CLASSES = 5
 ## pre-processing
 # coarse masks
 # filter size i.e., the window max will be taken and assigned [8,16,32]
-COARSE_FILTER_SIZE = 8
+COARSE_FILTER_SIZE = 16
 
 # dict keys for saving patches
 # image

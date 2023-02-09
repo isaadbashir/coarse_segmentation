@@ -6,6 +6,7 @@ import training.models.efficient_net as normal_efficient
 import torch.nn as nn
 import torch
 import training.models.unext as unext
+from training.models.deeplab import DeepLab
 
 class ModelBuilder(nn.Module):
 
@@ -60,7 +61,7 @@ class ModelBuilder(nn.Module):
         elif self.model_name == config.UNET_MODEL:
             return unext.UNext(), 100
         elif self.model_name == config.DEEPLAB_MODEL:
-            pass
+            return DeepLab(backbone='resnet50', output_stride=16), 256
         else:
             raise Exception(f"{self.model_name} dosen't exist ")
     
@@ -131,6 +132,15 @@ class ModelBuilder(nn.Module):
         self.classifier = self.classifier.to(device)
 
     def forward(self, x):
+
+        if self.model_name == config.UNET_MODEL:
+            return self.encoder(x)
+        
+        if self.model_name == config.DEEPLAB_MODEL:
+            enc_out = self.encoder(x)
+            return self.classifier(enc_out), enc_out
+
+
         enc_out,_ = self.encoder(x)
         output = self.classifier(enc_out)
 

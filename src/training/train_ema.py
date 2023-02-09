@@ -233,7 +233,7 @@ class Trainer:
         self.logger.info(f'STEP:3 - Loaded \n{optim} successfully')
 
         self.logger.info(f'STEP:4 - Loading losses')
-        loss = [CE_loss, mse_loss, kl_loss, SCELoss(alpha=6, beta=1.0, num_classes=self.num_classes)]
+        loss = [CE_loss, mse_loss, SCELoss(alpha=2.0, beta=1.0, num_classes=self.num_classes)]
         self.logger.info(f'STEP:4 - Loading losses successfully')
 
         # progress bar outer for epoch
@@ -369,7 +369,6 @@ class Trainer:
         else:
             model.eval()
 
-        # TODO: used to get top,worst and random images
         all_f1_scores = []
 
         # load the batch
@@ -389,7 +388,7 @@ class Trainer:
             with torch.set_grad_enabled(phase == 'train'):
 
                 # pass the images through the model and get output
-                output = model(images)
+                output, _ = model(images)
 
                 # resize the output to 512 for consistency
                 output = F.interpolate(output, size = (self.patch_size, self.patch_size), mode='nearest')
@@ -477,18 +476,18 @@ class Trainer:
             pbar.set_description(f'Generating Random performing predictions ...')
             random.seed(None)
             random_index = random.sample(range(len(generator.dataset)), k=num_of_samples)
-            self.generate_predictions_figure(epoch, generator, model, num_of_samples, f'{phase}-random', random_index)
+            self.generate_predictions_figure(epoch, generator, model, num_of_samples, f'{phase}-random', random_index, np.array(all_f1_scores)[random_index])
 
             # sort the array
             sorted_indices = np.argsort(all_f1_scores)
         
             # get the top instances
             pbar.set_description(f'Generating Top performing predictions ...')
-            self.generate_predictions_figure(epoch, generator, model, num_of_samples, f'{phase}-top', sorted_indices[-num_of_samples:])
+            self.generate_predictions_figure(epoch, generator, model, num_of_samples, f'{phase}-top', sorted_indices[-num_of_samples:], np.array(all_f1_scores)[sorted_indices[-num_of_samples:]])
         
             # get the worst instances
             pbar.set_description(f'Generating Worst performing predictions ...')
-            self.generate_predictions_figure(epoch, generator, model, num_of_samples, f'{phase}-worst', sorted_indices[:num_of_samples])
+            self.generate_predictions_figure(epoch, generator, model, num_of_samples, f'{phase}-worst', sorted_indices[:num_of_samples], np.array(all_f1_scores)[sorted_indices[:num_of_samples]])
 
         return epoch_loss, epoch_accuracy, epoch_iou, epoch_f1, epoch_class_iou, epoch_class_dice
 
@@ -550,7 +549,7 @@ class Trainer:
                 loss_feat = criterion[1](feats, feats_ema)
 
                 # calculate the total loss
-                loss = 0.5*(loss_model + ema_loss) + loss_feat
+                loss = loss_model + ema_loss + loss_feat
 
                 # update the loss 
                 self.update_loss(loss)
@@ -566,7 +565,7 @@ class Trainer:
                     # propagate the losses
                     loss.backward()
                     optimizer.step()
-                    ema_model.update_ema_variables(model, 0.80, epoch)
+                    ema_model.update_ema_variables(model, 0.99, epoch)
 
                 # calculate the batch acc and iou
                 pixel_acc = 1.0 * metrics[0] / (np.spacing(1) + metrics[1])

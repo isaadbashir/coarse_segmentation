@@ -1,6 +1,6 @@
 import numpy as np
 import matplotlib
-matplotlib.use('tKAgg')
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import logging
 import sys

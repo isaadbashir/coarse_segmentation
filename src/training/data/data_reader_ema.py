@@ -60,12 +60,10 @@ class DataReader(BaseDataset):
         random.seed(time.time())
         # read data which is in ND format where first 3 are image and 4th is mask
         image_data = np.load(self.list_of_images[i])
-        idx_num = random.randint(0, 13)
-        idx_num = 0 if idx_num == 1 else idx_num
-        image = image_data[f'arr_1'] # index of the stained image
-        mask = image_data['mask'] # index of the mask
-        aug_image = image_data[f'arr_{idx_num}'] # index of the augmetned image
-        # print(idx_num)
+        
+        image = image_data['arr_0'] # index of the stained image
+        mask = image_data['pixel_mask'] # index of the mask
+        aug_image = image_data['arr_1'] # index of the augmetned image
         # apply transformations
         image, aug_image, mask = self.preprocess_for_train(image, aug_image, mask)
 
@@ -113,6 +111,6 @@ if __name__ == '__main__':
     print(X.shape, Y.shape)
 
     # fig = utils.plot_image_prediction(X.cpu().numpy(), Y.numpy(), F.one_hot(Y.to(torch.int64), num_classes=config.TNBC_NUMBER_OF_CLASSES).permute(0,3,1,2).numpy(), N, 5, 5)
-    fig = utils.plot_image_prediction(X.cpu().numpy(), Y.numpy(), AX.cpu().numpy(), N, 12, 5)
+    fig = utils.plot_image_prediction(AX.cpu().numpy(), Y.numpy(), X.cpu().numpy(), N, 12, 5)
 
     plt.show()
