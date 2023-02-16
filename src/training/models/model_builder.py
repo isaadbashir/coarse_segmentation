@@ -144,6 +144,6 @@ class ModelBuilder(nn.Module):
         enc_out,_ = self.encoder(x)
         output = self.classifier(enc_out)
 
-        return output, enc_out
+        return output
 
     

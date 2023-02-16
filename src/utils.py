@@ -5,18 +5,19 @@ import matplotlib.pyplot as plt
 import logging
 import sys
 import src.config as config
+from skimage.measure import regionprops
+from skimage import segmentation
+
 
 def get_console_handler():
     console_handler = logging.StreamHandler(sys.stdout)
     console_handler.setFormatter(config.LOG_FORMATTER)
     return console_handler
 
-
 def get_file_handler(file_path):
     file_handler = logging.FileHandler(file_path)
     file_handler.setFormatter(config.LOG_FORMATTER)
     return file_handler
-
 
 def get_logger(logger_name, file_path):
     logger = logging.getLogger(logger_name)
@@ -26,7 +27,6 @@ def get_logger(logger_name, file_path):
     # with this pattern, it's rarely necessary to propagate the error up to parent
     logger.propagate = False
     return logger
-
 
 # common functions used in the project
 def group_mask_tnbc_classes(mask):
@@ -66,12 +66,40 @@ def group_mask_tnbc_classes(mask):
 
     return mask
 
-
-
 def create_mask(pred_mask):
     pred_mask = np.argmax(pred_mask, axis=-1)
     return pred_mask
 
+def refine_mask(image, coarse_mask):
+
+    slic = segmentation.slic(image, n_segments=500, start_label=1, compactness=30)
+
+    refined_mask = np.ones_like(coarse_mask) * -1
+
+    for prop in regionprops(slic):
+        
+        # draw rectangle around segmented coins
+        y0, x0 = prop.centroid
+
+        # contains the image patch
+        slic_label = slic[int(y0),int(x0)]
+                
+        # mask for the label
+        temp_mask = slic == slic_label
+
+        # find the max value in the mask
+        mask_label = np.unique(coarse_mask[temp_mask])[np.argmax(np.unique(coarse_mask[temp_mask], return_counts=True)[1])]
+
+        refined_mask[temp_mask] = mask_label
+
+    # fix the -1 situtation
+    negative_mask = refined_mask == -1
+    refined_mask[negative_mask] = coarse_mask[negative_mask]
+
+    for c in range(5):
+        refined_mask[0,c] = c
+
+    return refined_mask
 
 def plot_image_prediction(images, masks, outputs, names, num_of_images, num_of_classes, font_size=14):
 
@@ -101,6 +129,9 @@ def plot_image_prediction(images, masks, outputs, names, num_of_images, num_of_c
         mask_i = np.copy(masks[i, ...])
         pred_mask_i = np.copy(pred_mask[i, ...])
 
+        refined_mask = refine_mask(images[i, ...], pred_mask_i)
+
+
         mask_i[0, 0] = 0
         mask_i[0, 1] = 1
         mask_i[0, 2] = 2
@@ -115,9 +146,9 @@ def plot_image_prediction(images, masks, outputs, names, num_of_images, num_of_c
         pred_mask_i[0, 4] = 3
         pred_mask_i[0, 5] = 4
 
-        ax[i, 2].imshow(pred_mask_i.astype('uint8'))
+        ax[i, 2].imshow(refined_mask.astype('uint8'))
 
-        pred_mask_i_overlay = np.ma.masked_where(pred_mask_i == 0, pred_mask_i)
+        pred_mask_i_overlay = np.ma.masked_where(refined_mask == 0, refined_mask)
 
         ax[i, 3].imshow(images[i, ...])
         ax[i, 3].imshow(pred_mask_i_overlay.astype('uint8'), interpolation='none', cmap='jet', alpha=0.5)
@@ -136,7 +167,6 @@ def plot_image_prediction(images, masks, outputs, names, num_of_images, num_of_c
         ax[i, 3].set_xticks([])
 
     return fig
-
 
 def plot_confusion_matrix(confusion_matrix, classes, title=None, cmap=plt.cm.Blues): 
     if not title:

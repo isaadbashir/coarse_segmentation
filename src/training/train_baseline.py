@@ -19,7 +19,6 @@ from training.models.model_builder import ModelBuilder
 from utils import *
 from time import time
 
-
 class Trainer:
     """
     Training the coarse segmentation networks
@@ -96,7 +95,8 @@ class Trainer:
                     std=[1.0, 1.0, 1.0],
                     max_pixel_value=255.0),
             ToTensorV2()
-        ])
+        ],
+        additional_targets={'mask1': 'mask', 'mask2': 'mask'})
 
         # create the test augmentation
         test_transform = album.Compose([
@@ -106,7 +106,8 @@ class Trainer:
                     std=[1.0, 1.0, 1.0],
                     max_pixel_value=255.0),
             ToTensorV2()
-        ])
+        ],
+        additional_targets={'mask1': 'mask', 'mask2': 'mask'})
 
         # create the data loader params
         params = {'batch_size': self.batch_size,
@@ -370,7 +371,7 @@ class Trainer:
         all_f1_scores = []
 
         # load the batch
-        for images, masks, _ in generator:
+        for images, masks, _, _ in generator:
 
             # move the batch to cuda device as the model is on cuda
             images = images.to(self.device)
@@ -390,7 +391,7 @@ class Trainer:
 
                 # resize the output to 512 for consistency
                 output = F.interpolate(output, size = (self.patch_size, self.patch_size), mode='nearest')
-
+            
                 # calculate the loss
                 loss = criterion[0](output, masks) #0.5*criterion[0](output, masks) + 
 
@@ -505,7 +506,7 @@ class Trainer:
         names = []
 
         for idx in index:
-            image, mask, name = generator.dataset[idx]
+            image, _, mask, name = generator.dataset[idx]
             images.append(image.numpy())
             masks.append(mask.numpy())
             names.append(name)

@@ -30,8 +30,9 @@ class DataReader(BaseDataset):
                         mean=[0.0, 0.0, 0.0],
                         std=[1.0, 1.0, 1.0],
                         max_pixel_value=255.0),
-                ToTensorV2(),  
-            ])
+                ToTensorV2()],
+                additional_targets={'mask1': 'mask', 
+                                    'mask2': 'mask'})
             
         else:
             self.transform = transformation
@@ -60,10 +61,13 @@ class DataReader(BaseDataset):
         # read data which is in ND format where first 3 are image and 4th is mask
         image_data = np.load(self.list_of_images[i])
         idx_num = random.randint(0, 1)
+        
         # idx_num = 1
         image = image_data[f'arr_{idx_num}'] # index of the augmetned image
         mask = image_data['mask'] # index of the mask
-        pixel_mask = image_data['pixel_mask']
+        pixel_mask = image_data['pixel_mask'] # index of the pixel mask
+
+        slic = segmentation.slic(image, n_segments=500, start_label=1, compactness=30)
 
         # apply transformations
         image, mask, pixel_mask = self.preprocess_for_train(image, mask, pixel_mask)
@@ -71,7 +75,7 @@ class DataReader(BaseDataset):
         # convert mask from HW to CHW mask
         #mask = torch.nn.functional.one_hot(mask.to(torch.int64), num_classes=self.num_classes)
 
-        return image, mask.long(), pixel_mask.long(), self.list_of_images[i].split('/')[-1].split('_')[0]
+        return image, mask.long(), slic, pixel_mask, self.list_of_images[i].split('/')[-1].split('_')[0]
 
     def __len__(self):
         return len(self.list_of_images)
@@ -94,7 +98,8 @@ if __name__ == '__main__':
                 std=[1.0, 1.0, 1.0],
                 max_pixel_value=255.0),
         ToTensorV2()
-    ])
+    ],additional_targets={'mask1': 'mask', 
+    'mask2': 'mask'})
 
     params = {'batch_size': 12,
               'shuffle': False,
@@ -108,9 +113,9 @@ if __name__ == '__main__':
 
     train_generator = data.DataLoader(data_reader, **params)
 
-    X, Y, N = next(iter(train_generator))
+    X, Y, S, P,  N = next(iter(train_generator))
     print(X.shape, Y.shape)
 
-    fig = utils.plot_image_prediction(X.cpu().numpy(), Y.numpy(), F.one_hot(Y.to(torch.int64), num_classes=config.TNBC_NUMBER_OF_CLASSES).permute(0,3,1,2).numpy(), N, 5, 5)
+    fig = utils.plot_image_prediction(X.cpu().numpy(), Y.numpy(), F.one_hot(P.to(torch.int64), num_classes=config.TNBC_NUMBER_OF_CLASSES).permute(0,3,1,2).numpy(), N, 5, 5)
 
     plt.show()
